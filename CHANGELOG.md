@@ -53,7 +53,11 @@ Ref: https://keepachangelog.com/en/1.0.0/
 ### Bug Fixes
 
 + [\#9965](https://github.com/cosmos/cosmos-sdk/pull/9965) Fixed `simd version` command output to report the right release tag.
-
++ 
+### API Breaking Changes
+* (client/tx) [\#9421](https://github.com/cosmos/cosmos-sdk/pull/9421/) `BuildUnsignedTx`, `BuildSimTx`, `PrintUnsignedStdTx` functions are moved to
+  the Tx Factory as methods.
+  
 ## [v0.43.0](https://github.com/cosmos/cosmos-sdk/releases/tag/v0.43.0) - 2021-08-10
 
 ### Features
@@ -148,11 +152,7 @@ Ref: https://keepachangelog.com/en/1.0.0/
 * (x/capability) [\#9836](https://github.com/cosmos/cosmos-sdk/pull/9836) Removed `InitializeAndSeal(ctx sdk.Context)` and replaced with `Seal()`. App must add x/capability module to the begin blockers which will assure that the x/capability keeper is properly initialized. The x/capability begin blocker must be run before any other module which uses x/capability.
 
 
-### Deprecated
-
-## [v0.52.0](https://github.com/cosmos/cosmos-sdk/releases/tag/v0.52.0) - 2024-XX-XX
-
-Every module contains its own CHANGELOG.md. Please refer to the module you are interested in.
+### State Machine Breaking
 
 ### Features
 
