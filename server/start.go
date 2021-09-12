@@ -387,9 +387,9 @@ func startCmtNode(
 		cfg,
 		pv,
 		nodeKey,
-		proxy.NewLocalClientCreator(cmtApp),
-		getGenDocProvider(cfg),
-		cmtcfg.DefaultDBProvider,
+		proxy.NewCommittingClientCreator(app),
+		genDocProvider,
+		node.DefaultDBProvider,
 		node.DefaultMetricsProvider(cfg.Instrumentation),
 		servercmtlog.CometLoggerWrapper{Logger: svrCtx.Logger},
 	)
