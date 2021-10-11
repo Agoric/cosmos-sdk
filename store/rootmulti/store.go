@@ -190,7 +190,22 @@ func (rs *Store) loadVersion(ver int64, upgrades *types.StoreUpgrades) error {
 	// load each Store (note this doesn't panic on unmounted keys now)
 	var newStores = make(map[types.StoreKey]types.CommitKVStore)
 
-	for key, storeParams := range rs.storesParams {
+	storesKeys := make([]types.StoreKey, 0, len(rs.storesParams))
+
+	for key := range rs.storesParams {
+		storesKeys = append(storesKeys, key)
+	}
+	if upgrades != nil {
+		// deterministic iteration order for upgrades
+		// (as the underlying store may change and
+		// upgrades make store changes where the execution order may matter)
+		sort.Slice(storesKeys, func(i, j int) bool {
+			return storesKeys[i].Name() < storesKeys[j].Name()
+		})
+	}
+
+	for _, key := range storesKeys {
+		storeParams := rs.storesParams[key]
 		commitID := rs.getCommitID(infos, key.Name())
 
 		// If it has been added, set the initial version
@@ -492,7 +507,11 @@ func (rs *Store) GetStore(key types.StoreKey) types.Store {
 // NOTE: The returned KVStore may be wrapped in an inter-block cache if it is
 // set on the root store.
 func (rs *Store) GetKVStore(key types.StoreKey) types.KVStore {
-	store := rs.stores[key].(types.KVStore)
+	s := rs.stores[key]
+	if s == nil {
+		panic(fmt.Sprintf("store does not exist for key: %s", key.Name()))
+	}
+	store := s.(types.KVStore)
 
 	if rs.TracingEnabled() {
 		store = tracekv.NewStore(store, rs.traceWriter, rs.traceContext)

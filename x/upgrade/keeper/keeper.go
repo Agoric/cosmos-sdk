@@ -7,6 +7,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"sort"
 
 	"github.com/tendermint/tendermint/libs/log"
 	tmos "github.com/tendermint/tendermint/libs/os"
@@ -84,7 +85,18 @@ func (k Keeper) SetModuleVersionMap(ctx sdk.Context, vm module.VersionMap) {
 	if len(vm) > 0 {
 		store := ctx.KVStore(k.storeKey)
 		versionStore := prefix.NewStore(store, []byte{types.VersionMapByte})
-		for modName, ver := range vm {
+		// Even though the underlying store (cachekv) store is sorted, we still
+		// prefer a deterministic iteration order of the map, to avoid undesired
+		// surprises if we ever change stores.
+		sortedModNames := make([]string, 0, len(vm))
+
+		for key := range vm {
+			sortedModNames = append(sortedModNames, key)
+		}
+		sort.Strings(sortedModNames)
+
+		for _, modName := range sortedModNames {
+			ver := vm[modName]
 			nameBytes := []byte(modName)
 			verBytes := make([]byte, 8)
 			binary.BigEndian.PutUint64(verBytes, ver)
@@ -110,6 +122,41 @@ func (k Keeper) GetModuleVersionMap(ctx sdk.Context) module.VersionMap {
 	}
 
 	return vm
+}
+
+// GetModuleVersions gets a slice of module consensus versions
+func (k Keeper) GetModuleVersions(ctx sdk.Context) []*types.ModuleVersion {
+	store := ctx.KVStore(k.storeKey)
+	it := sdk.KVStorePrefixIterator(store, []byte{types.VersionMapByte})
+	defer it.Close()
+
+	mv := make([]*types.ModuleVersion, 0)
+	for ; it.Valid(); it.Next() {
+		moduleBytes := it.Key()
+		name := string(moduleBytes[1:])
+		moduleVersion := binary.BigEndian.Uint64(it.Value())
+		mv = append(mv, &types.ModuleVersion{
+			Name:    name,
+			Version: moduleVersion,
+		})
+	}
+	return mv
+}
+
+// gets the version for a given module, and returns true if it exists, false otherwise
+func (k Keeper) getModuleVersion(ctx sdk.Context, name string) (uint64, bool) {
+	store := ctx.KVStore(k.storeKey)
+	it := sdk.KVStorePrefixIterator(store, []byte{types.VersionMapByte})
+	defer it.Close()
+
+	for ; it.Valid(); it.Next() {
+		moduleName := string(it.Key()[1:])
+		if moduleName == name {
+			version := binary.BigEndian.Uint64(it.Value())
+			return version, true
+		}
+	}
+	return 0, false
 }
 
 // ScheduleUpgrade schedules an upgrade based on the specified plan.
