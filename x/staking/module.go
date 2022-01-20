@@ -171,6 +171,14 @@ func (am AppModule) BeginBlock(ctx sdk.Context, _ abci.RequestBeginBlock) {
 // EndBlock returns the end blocker for the staking module. It returns no validator
 // updates.
 func (am AppModule) EndBlock(ctx sdk.Context, _ abci.RequestEndBlock) []abci.ValidatorUpdate {
+	// FIGME: Raise an event in end block.
+	AttributeValueCategory := "ibc_channel"
+	ctx.EventManager().EmitEvents(sdk.Events{
+		sdk.NewEvent(
+			sdk.EventTypeMessage,
+			sdk.NewAttribute(sdk.AttributeKeyModule /* channeltypes. */, AttributeValueCategory),
+		),
+	})
 	return EndBlocker(ctx, am.keeper)
 }
 
