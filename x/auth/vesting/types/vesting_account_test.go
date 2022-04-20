@@ -1191,8 +1191,7 @@ func TestClawback_finalUnlock(t *testing.T) {
 	// clawback the unvested funds (600fee, 50stake)
 	_, _, dest := testdata.KeyTestPubAddr()
 	va2 := app.AccountKeeper.GetAccount(ctx, addr).(*types.ClawbackVestingAccount)
-	clawbackAction := types.NewClawbackAction(funder, dest, app.AccountKeeper, app.BankKeeper, app.StakingKeeper)
-	err = va2.Clawback(ctx, clawbackAction)
+	err = va2.Clawback(ctx, dest, app.AccountKeeper, app.BankKeeper, app.StakingKeeper)
 	require.NoError(t, err)
 
 	// check vesting account
