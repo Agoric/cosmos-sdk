@@ -64,6 +64,9 @@ func (k Keeper) Logger(ctx sdk.Context) log.Logger {
 }
 
 // AddHooks adds a hooks object to be called upon certain events.
+// All hooks will be called with the full amount of a reward distribution.
+// Hooks which wish to sequence with later ones handling the leftovers
+// from earlier ones must form a DistributionHookSequence.
 func (k *Keeper) AddHooks(h types.DistributionHooks) *Keeper {
 	if h != nil {
 		k.hooks = append(k.hooks, h)

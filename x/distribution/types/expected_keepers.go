@@ -39,7 +39,40 @@ type DistributionHooks interface {
 	AllowWithdrawAddr(ctx sdk.Context, delAddr sdk.AccAddress) bool
 
 	// AfterDelegationReward is called after the reward has been transferred the address.
-	AfterDelegationReward(ctx sdk.Context, delAddr, withdrawAddr sdk.AccAddress, reward sdk.Coins)
+	// Returns any "remaining" coins for later hooks to process. The definition of
+	// "remaining" depends on the particular type of hooks involved.
+	AfterDelegationReward(ctx sdk.Context, delAddr, withdrawAddr sdk.AccAddress, reward sdk.Coins) sdk.Coins
+}
+
+type distributionHooksSequence struct {
+	hooks []DistributionHooks
+}
+
+var _ DistributionHooks = distributionHooksSequence{}
+
+// AllowWithdawAddr implements the DistributionHooks interface.
+func (s distributionHooksSequence) AllowWithdrawAddr(ctx sdk.Context, delAddr sdk.AccAddress) bool {
+	for _, h := range s.hooks {
+		if !h.AllowWithdrawAddr(ctx, delAddr) {
+			return false
+		}
+	}
+	return true
+}
+
+// AfterDelegationReward implements the DistributionHooks interface.
+func (s distributionHooksSequence) AfterDelegationReward(
+	ctx sdk.Context, delAddr, withdrawAddr sdk.AccAddress, reward sdk.Coins) sdk.Coins {
+	for _, h := range s.hooks {
+		reward = h.AfterDelegationReward(ctx, delAddr, withdrawAddr, reward)
+	}
+	return reward
+}
+
+// DistributionHookSequence returns a DistributionHooks which sequences the given hooks.
+// The remainder returned from one's AfterDelegationReward are fed to the next one's.
+func DistributionHookSequence(hooks ...DistributionHooks) DistributionHooks {
+	return distributionHooksSequence{hooks: hooks}
 }
 
 // StakingKeeper expected staking keeper (noalias)

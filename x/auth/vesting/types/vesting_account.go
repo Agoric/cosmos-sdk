@@ -1167,23 +1167,23 @@ func NewClawbackRewardAction(ak AccountKeeper, bk BankKeeper, sk StakingKeeper) 
 }
 
 // ProcessReward implements the exported.RewardAction interface.
-func (cra clawbackRewardAction) ProcessReward(ctx sdk.Context, reward sdk.Coins, rawAccount exported.VestingAccount) error {
+func (cra clawbackRewardAction) ProcessReward(ctx sdk.Context, reward sdk.Coins, rawAccount exported.VestingAccount) (sdk.Coins, error) {
 	cva, ok := rawAccount.(*ClawbackVestingAccount)
 	if !ok {
-		return sdkerrors.Wrapf(sdkerrors.ErrNotSupported, "expected *ClawbackVestingAccount, got %T", rawAccount)
+		return reward, sdkerrors.Wrapf(sdkerrors.ErrNotSupported, "expected *ClawbackVestingAccount, got %T", rawAccount)
 	}
-	cva.postReward(ctx, reward, cra.ak, cra.bk, cra.sk)
-	return nil
+	remainder := cva.postReward(ctx, reward, cra.ak, cra.bk, cra.sk)
+	return remainder, nil
 }
 
 // PostReward implements the exported.ClawbackVestingAccountI interface.
-func (va *ClawbackVestingAccount) PostReward(ctx sdk.Context, reward sdk.Coins, action exported.RewardAction) error {
+func (va *ClawbackVestingAccount) PostReward(ctx sdk.Context, reward sdk.Coins, action exported.RewardAction) (sdk.Coins, error) {
 	return action.ProcessReward(ctx, reward, va)
 }
 
 // postReward encumbers a previously-deposited reward according to the current vesting apportionment of staking.
 // Note that rewards might be unvested, but are unlocked.
-func (va ClawbackVestingAccount) postReward(ctx sdk.Context, reward sdk.Coins, ak AccountKeeper, bk BankKeeper, sk StakingKeeper) {
+func (va ClawbackVestingAccount) postReward(ctx sdk.Context, reward sdk.Coins, ak AccountKeeper, bk BankKeeper, sk StakingKeeper) sdk.Coins {
 	// Find the scheduled amount of vested and unvested staking tokens
 	bondDenom := sk.BondDenom(ctx)
 	vested := ReadSchedule(va.StartTime, va.EndTime, va.VestingPeriods, va.OriginalVesting, ctx.BlockTime().Unix()).AmountOf(bondDenom)
@@ -1191,13 +1191,13 @@ func (va ClawbackVestingAccount) postReward(ctx sdk.Context, reward sdk.Coins, a
 
 	if unvested.IsZero() {
 		// no need to adjust the vesting schedule
-		return
+		return reward
 	}
 
 	if vested.IsZero() {
 		// all staked tokens must be unvested
 		va.distributeReward(ctx, ak, bondDenom, reward)
-		return
+		return sdk.NewCoins()
 	}
 
 	// Find current split of account balance on staking axis
@@ -1216,13 +1216,15 @@ func (va ClawbackVestingAccount) postReward(ctx sdk.Context, reward sdk.Coins, a
 
 	// Compute the unvested amount of reward and add to vesting schedule
 	if unvested.IsZero() {
-		return
+		return reward
 	}
 	if vested.IsZero() {
 		va.distributeReward(ctx, ak, bondDenom, reward)
-		return
+		return sdk.NewCoins()
 	}
 	unvestedRatio := unvested.ToDec().QuoTruncate(bonded.ToDec()) // round down
 	unvestedReward := scaleCoins(reward, unvestedRatio)
+	vestedReward := reward.Sub(reward.Min(unvestedReward))
 	va.distributeReward(ctx, ak, bondDenom, unvestedReward)
+	return vestedReward
 }

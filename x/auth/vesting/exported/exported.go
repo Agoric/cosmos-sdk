@@ -60,7 +60,8 @@ type RewardAction interface {
 	// ProcessReward processes the given reward which as been added to the account.
 	// Returns an error if the account is of the wrong type.
 	// The rawAccount should bypass any account wrappers.
-	ProcessReward(ctx sdk.Context, reward sdk.Coins, rawAccount VestingAccount) error
+	// Returns the coins not processed.
+	ProcessReward(ctx sdk.Context, reward sdk.Coins, rawAccount VestingAccount) (sdk.Coins, error)
 }
 
 // GrantAccount is a VestingAccount which can accept new grants.
@@ -86,5 +87,5 @@ type ClawbackVestingAccountI interface {
 	Clawback(ctx sdk.Context, action ClawbackAction) error
 
 	// PostReward preforms post-reward processing described by action.
-	PostReward(ctx sdk.Context, reward sdk.Coins, action RewardAction) error
+	PostReward(ctx sdk.Context, reward sdk.Coins, action RewardAction) (sdk.Coins, error)
 }

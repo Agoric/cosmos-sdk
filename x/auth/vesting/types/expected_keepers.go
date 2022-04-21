@@ -49,5 +49,6 @@ type DistributionHooks interface {
 	AllowWithdrawAddr(ctx sdk.Context, delAddr sdk.AccAddress) bool
 
 	// AfterDelegationReward is called after the reward has been transferred the address.
-	AfterDelegationReward(ctx sdk.Context, delAddr, withdrawAddr sdk.AccAddress, reward sdk.Coins)
+	// Returns any "remaining" coins. See x/distribution/types/DistributionHooks.
+	AfterDelegationReward(ctx sdk.Context, delAddr, withdrawAddr sdk.AccAddress, reward sdk.Coins) sdk.Coins
 }

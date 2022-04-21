@@ -25,13 +25,15 @@ func (dh distributionHooks) AllowWithdrawAddr(ctx sdk.Context, delAddr sdk.AccAd
 	return !isClawback
 }
 
-func (dh distributionHooks) AfterDelegationReward(ctx sdk.Context, delAddr, withdrawAddr sdk.AccAddress, reward sdk.Coins) {
+func (dh distributionHooks) AfterDelegationReward(ctx sdk.Context, delAddr, withdrawAddr sdk.AccAddress, reward sdk.Coins) sdk.Coins {
 	acc := dh.accountKeeper.GetAccount(ctx, delAddr)
 	cva, isClawback := acc.(exported.ClawbackVestingAccountI)
-	if isClawback {
-		err := cva.PostReward(ctx, reward, dh.rewardAction)
-		if err != nil {
-			panic(err)
-		}
+	if !isClawback {
+		return reward // nothing processed
 	}
+	remainder, err := cva.PostReward(ctx, reward, dh.rewardAction)
+	if err != nil {
+		panic(err)
+	}
+	return remainder
 }

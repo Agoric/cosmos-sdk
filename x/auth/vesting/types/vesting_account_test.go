@@ -1237,8 +1237,9 @@ func TestRewards(t *testing.T) {
 	err = simapp.FundAccount(app.BankKeeper, ctx, addr, c(stake(120)))
 	require.NoError(t, err)
 	rewardAction := types.NewClawbackRewardAction(app.AccountKeeper, app.BankKeeper, app.StakingKeeper)
-	err = va.PostReward(ctx, c(stake(120)), rewardAction)
+	remainder, err := va.PostReward(ctx, c(stake(120)), rewardAction)
 	require.NoError(t, err)
+	require.Equal(t, int64(45), remainder.AmountOf(stakeDenom).Int64())
 
 	// With 1600 delegated, 1000 unvested, reward should be 75 unvested
 	va = app.AccountKeeper.GetAccount(ctx, addr).(*types.ClawbackVestingAccount)
@@ -1300,8 +1301,9 @@ func TestRewards_PostSlash(t *testing.T) {
 	err = simapp.FundAccount(app.BankKeeper, ctx, addr, c(stake(160)))
 	require.NoError(t, err)
 	rewardAction := types.NewClawbackRewardAction(app.AccountKeeper, app.BankKeeper, app.StakingKeeper)
-	err = va.PostReward(ctx, c(stake(160)), rewardAction)
+	remainder, err := va.PostReward(ctx, c(stake(160)), rewardAction)
 	require.NoError(t, err)
+	require.True(t, remainder.IsZero())
 	va = app.AccountKeeper.GetAccount(ctx, addr).(*types.ClawbackVestingAccount)
 	require.Equal(t, int64(4160), va.OriginalVesting.AmountOf(stakeDenom).Int64())
 	require.Equal(t, 8, len(va.VestingPeriods))
@@ -1321,8 +1323,9 @@ func TestRewards_PostSlash(t *testing.T) {
 	ctx = ctx.WithBlockTime(now.Add(1200 * time.Second))
 	err = simapp.FundAccount(app.BankKeeper, ctx, addr, c(stake(160)))
 	require.NoError(t, err)
-	err = va.PostReward(ctx, c(stake(160)), rewardAction)
+	remainder, err = va.PostReward(ctx, c(stake(160)), rewardAction)
 	require.NoError(t, err)
+	require.Equal(t, int64(160), remainder.AmountOf(stakeDenom).Int64())
 	va = app.AccountKeeper.GetAccount(ctx, addr).(*types.ClawbackVestingAccount)
 	// shouldn't be added to vesting schedule
 	require.Equal(t, int64(4160), va.OriginalVesting.AmountOf(stakeDenom).Int64())
