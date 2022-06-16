@@ -34,7 +34,11 @@ import (
 	"github.com/cosmos/cosmos-sdk/types/tx"
 	"github.com/cosmos/cosmos-sdk/types/tx/signing"
 	authcli "github.com/cosmos/cosmos-sdk/x/auth/client/cli"
-	authclitestutil "github.com/cosmos/cosmos-sdk/x/auth/client/testutil"
+	"github.com/cosmos/cosmos-sdk/x/auth/types"
+	authtypes "github.com/cosmos/cosmos-sdk/x/auth/types"
+	bank "github.com/cosmos/cosmos-sdk/x/bank/client/cli"
+	bankcli "github.com/cosmos/cosmos-sdk/x/bank/client/testutil"
+	banktypes "github.com/cosmos/cosmos-sdk/x/bank/types"
 	"github.com/cosmos/cosmos-sdk/x/genutil/client/cli"
 )
 
@@ -267,9 +271,110 @@ func (s *E2ETestSuite) TestCLISignBatch() {
 	_, err = authclitestutil.TxSignBatchExec(clientCtx, val.GetAddress(), malformedFile.Name(), fmt.Sprintf("--%s=%s", flags.FlagChainID, clientCtx.ChainID), "--signature-only")
 	s.Require().Error(err)
 
-	// make a txn to increase the sequence of sender
-	_, seq, err := clientCtx.AccountRetriever.GetAccountNumberSequence(clientCtx, val.GetAddress())
-	s.Require().NoError(err)
+func (s *IntegrationTestSuite) TestCliGetAccountAddressByID() {
+	require := s.Require()
+	val1 := s.network.Validators[0]
+	testCases := []struct {
+		name      string
+		args      []string
+		expectErr bool
+	}{
+		{
+			"not enough args",
+			[]string{fmt.Sprintf("--%s=json", tmcli.OutputFlag)},
+			true,
+		},
+		{
+			"invalid account id",
+			[]string{fmt.Sprint(-1), fmt.Sprintf("--%s=json", tmcli.OutputFlag)},
+			true,
+		},
+		{
+			"valid account id",
+			[]string{fmt.Sprint(0), fmt.Sprintf("--%s=json", tmcli.OutputFlag)},
+			false,
+		},
+	}
+
+	for _, tc := range testCases {
+		tc := tc
+		s.Run(tc.name, func() {
+			cmd := authcli.GetAccountAddressByIDCmd()
+			clientCtx := val1.ClientCtx
+
+			queryResJSON, err := clitestutil.ExecTestCLICmd(clientCtx, cmd, tc.args)
+			if tc.expectErr {
+				s.Require().Error(err)
+			} else {
+				s.Require().NoError(err)
+				var res types.QueryAccountAddressByIDResponse
+				require.NoError(val1.ClientCtx.Codec.UnmarshalJSON(queryResJSON.Bytes(), &res))
+				require.NotNil(res.GetAccountAddress())
+			}
+		})
+	}
+}
+
+func (s *IntegrationTestSuite) TestCLISignAminoJSON() {
+	require := s.Require()
+	val1 := s.network.Validators[0]
+	txCfg := val1.ClientCtx.TxConfig
+	sendTokens := sdk.NewCoins(
+		sdk.NewCoin(fmt.Sprintf("%stoken", val1.Moniker), sdk.NewInt(10)),
+		sdk.NewCoin(s.cfg.BondDenom, sdk.NewInt(10)),
+	)
+	txBz, err := s.createBankMsg(val1, val1.Address,
+		sendTokens, fmt.Sprintf("--%s=true", flags.FlagGenerateOnly))
+	require.NoError(err)
+	fileUnsigned := testutil.WriteToNewTempFile(s.T(), txBz.String())
+	chainFlag := fmt.Sprintf("--%s=%s", flags.FlagChainID, val1.ClientCtx.ChainID)
+	sigOnlyFlag := "--signature-only"
+	signModeAminoFlag := "--sign-mode=amino-json"
+
+	// SIC! validators have same key names and same addresses as those registered in the keyring,
+	//      BUT the keys are different!
+	valRecord, err := val1.ClientCtx.Keyring.Key(val1.Moniker)
+	require.NoError(err)
+
+	// query account info
+	queryResJSON, err := QueryAccountExec(val1.ClientCtx, val1.Address)
+	require.NoError(err)
+	var account authtypes.AccountI
+	require.NoError(val1.ClientCtx.Codec.UnmarshalInterfaceJSON(queryResJSON.Bytes(), &account))
+
+	/****  test signature-only  ****/
+	res, err := TxSignExec(val1.ClientCtx, val1.Address, fileUnsigned.Name(), chainFlag,
+		sigOnlyFlag, signModeAminoFlag)
+	require.NoError(err)
+	pub, err := valRecord.GetPubKey()
+	require.NoError(err)
+	checkSignatures(require, txCfg, res.Bytes(), pub)
+	sigs, err := txCfg.UnmarshalSignatureJSON(res.Bytes())
+	require.NoError(err)
+	require.Equal(1, len(sigs))
+	require.Equal(account.GetSequence(), sigs[0].Sequence)
+
+	/****  test full output  ****/
+	res, err = TxSignExec(val1.ClientCtx, val1.Address, fileUnsigned.Name(), chainFlag, signModeAminoFlag)
+	require.NoError(err)
+
+	// txCfg.UnmarshalSignatureJSON can't unmarshal a fragment of the signature, so we create this structure.
+	type txFragment struct {
+		Signatures []json.RawMessage
+	}
+	var txOut txFragment
+	err = json.Unmarshal(res.Bytes(), &txOut)
+	require.NoError(err)
+	require.Len(txOut.Signatures, 1)
+
+	/****  test file output  ****/
+	filenameSigned := filepath.Join(s.T().TempDir(), "test_sign_out.json")
+	fileFlag := fmt.Sprintf("--%s=%s", flags.FlagOutputDocument, filenameSigned)
+	_, err = TxSignExec(val1.ClientCtx, val1.Address, fileUnsigned.Name(), chainFlag, fileFlag, signModeAminoFlag)
+	require.NoError(err)
+	fContent, err := os.ReadFile(filenameSigned)
+	require.NoError(err)
+	require.Equal(res.String(), string(fContent))
 
 	account1, err := clientCtx.Keyring.Key("newAccount1")
 	s.Require().NoError(err)
