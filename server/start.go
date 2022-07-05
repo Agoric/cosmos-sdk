@@ -346,18 +346,6 @@ func startInProcess[T types.Application](svrCtx *Context, svrCfg serverconfig.Co
 			"(SDK v0.45). Please explicitly put the desired minimum-gas-prices in your app.toml.")
 	}
 
-	// wait for signal capture and gracefully return
-	// we are guaranteed to be waiting for the "ListenForQuitSignals" goroutine.
-	return g.Wait()
-}
-
-// TODO: Move nodeKey into being created within the function.
-func startCmtNode(
-	ctx context.Context,
-	cfg *cmtcfg.Config,
-	app types.Application,
-	svrCtx *Context,
-) (tmNode *node.Node, cleanupFn func(), err error) {
 	nodeKey, err := p2p.LoadOrGenNodeKey(cfg.NodeKeyFile())
 	if err != nil {
 		return nil, cleanupFn, err
@@ -376,11 +364,11 @@ func startCmtNode(
 	} else {
 		ctx.Logger.Info("starting node with ABCI Tendermint in-process")
 
-		tmNode, err = node.NewNode(
+		tmNode, err := node.NewNode(
 			cfg,
 			pvm.LoadOrGenFilePV(cfg.PrivValidatorKeyFile(), cfg.PrivValidatorStateFile()),
 			nodeKey,
-			proxy.NewCommittingClientCreator(app),
+			proxy.NewLocalClientCreator(app),
 			genDocProvider,
 			node.DefaultDBProvider,
 			node.DefaultMetricsProvider(cfg.Instrumentation),
@@ -398,7 +386,7 @@ func startCmtNode(
 	// service if API or gRPC is enabled, and avoid doing so in the general
 	// case, because it spawns a new local tendermint RPC client.
 	if (config.API.Enable || config.GRPC.Enable) && tmNode != nil {
-		clientCtx := clientCtx.WithClient(local.New(tmNode))
+		clientCtx = clientCtx.WithClient(local.New(tmNode))
 
 		app.RegisterTxService(clientCtx)
 		app.RegisterTendermintService(clientCtx)
@@ -410,14 +398,9 @@ func startCmtNode(
 	return config, nil
 }
 
-// getGenDocProvider returns a function which returns the genesis doc from the genesis file.
-func getGenDocProvider(cfg *cmtcfg.Config) func() (node.ChecksummedGenesisDoc, error) {
-	return func() (node.ChecksummedGenesisDoc, error) {
-		defaultGenesisDoc := node.ChecksummedGenesisDoc{
-			Sha256Checksum: []byte{},
-		}
-
-		appGenesis, err := genutiltypes.AppGenesisFromFile(cfg.GenesisFile())
+	var apiSrv *api.Server
+	if config.API.Enable {
+		genDoc, err := genDocProvider()
 		if err != nil {
 			return defaultGenesisDoc, err
 		}
