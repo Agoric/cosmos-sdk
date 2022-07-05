@@ -77,10 +77,8 @@ func (AppModule) RegisterInterfaces(registrar registry.InterfaceRegistrar) {
 }
 
 // RegisterGRPCGatewayRoutes registers the gRPC Gateway routes for the mint module.
-func (AppModule) RegisterGRPCGatewayRoutes(clientCtx client.Context, mux *gwruntime.ServeMux) {
-	if err := types.RegisterQueryHandlerClient(context.Background(), mux, types.NewQueryClient(clientCtx)); err != nil {
-		panic(err)
-	}
+func (AppModuleBasic) RegisterGRPCGatewayRoutes(clientCtx client.Context, mux *runtime.ServeMux) {
+	types.RegisterQueryHandlerClient(context.Background(), mux, types.NewQueryClient(clientCtx))
 }
 
 // RegisterServices registers module services.
