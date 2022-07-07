@@ -34,7 +34,7 @@ func NewInt64Coin(denom string, amount int64) Coin {
 
 // String provides a human-readable representation of a coin
 func (coin Coin) String() string {
-	return fmt.Sprintf("%v%v", coin.Amount, coin.Denom)
+	return fmt.Sprintf("%v%s", coin.Amount, coin.Denom)
 }
 
 // Validate returns an error if the Coin has a negative amount or if
@@ -190,13 +190,18 @@ func (coins Coins) MarshalJSON() ([]byte, error) {
 func (coins Coins) String() string {
 	if len(coins) == 0 {
 		return ""
+	} else if len(coins) == 1 {
+		return coins[0].String()
 	}
 
-	out := ""
-	for _, coin := range coins {
-		out += fmt.Sprintf("%v,", coin.String())
+	// Build the string with a string builder
+	var out strings.Builder
+	for _, coin := range coins[:len(coins)-1] {
+		out.WriteString(coin.String())
+		out.WriteByte(',')
 	}
-	return out[:len(out)-1]
+	out.WriteString(coins[len(coins)-1].String())
+	return out.String()
 }
 
 // Validate checks that the Coins are sorted, have positive amount, with a valid and unique
@@ -809,13 +814,13 @@ func ParseCoinNormalized(coinStr string) (coin Coin, err error) {
 	return coin, nil
 }
 
-// ParseCoinsNormalized will parse out a list of coins separated by commas, and normalize them by converting to smallest
-// unit. If the parsing is successuful, the provided coins will be sanitized by removing zero coins and sorting the coin
+// ParseCoinsNormalized will parse out a list of coins separated by commas, and normalize them by converting to the smallest
+// unit. If the parsing is successful, the provided coins will be sanitized by removing zero coins and sorting the coin
 // set. Lastly a validation of the coin set is executed. If the check passes, ParseCoinsNormalized will return the
 // sanitized coins.
-// Otherwise it will return an error.
+// Otherwise, it will return an error.
 // If an empty string is provided to ParseCoinsNormalized, it returns nil Coins.
-// ParseCoinsNormalized supports decimal coins as inputs, and truncate them to int after converted to smallest unit.
+// ParseCoinsNormalized supports decimal coins as inputs, and truncate them to int after converted to the smallest unit.
 // Expected format: "{amount0}{denomination},...,{amountN}{denominationN}"
 func ParseCoinsNormalized(coinStr string) (Coins, error) {
 	coins, err := ParseDecCoins(coinStr)
