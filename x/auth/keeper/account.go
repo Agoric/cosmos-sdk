@@ -26,7 +26,7 @@ func (ak accountKeeper) NewAccount(ctx sdk.Context, acc types.AccountI) types.Ac
 }
 
 // HasAccount implements AccountKeeperI.
-func (ak AccountKeeper) HasAccount(ctx sdk.Context, addr sdk.AccAddress) bool {
+func (ak accountKeeper) HasAccount(ctx sdk.Context, addr sdk.AccAddress) bool {
 	store := ctx.KVStore(ak.key)
 	return store.Has(types.AddressStoreKey(addr))
 }
