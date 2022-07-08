@@ -29,15 +29,14 @@ import (
 	"github.com/cosmos/cosmos-sdk/client/flags"
 	"github.com/cosmos/cosmos-sdk/codec"
 	"github.com/cosmos/cosmos-sdk/server/api"
+	"github.com/cosmos/cosmos-sdk/server/config"
 	serverconfig "github.com/cosmos/cosmos-sdk/server/config"
 	servergrpc "github.com/cosmos/cosmos-sdk/server/grpc"
 	"github.com/cosmos/cosmos-sdk/server/rosetta"
 	crgserver "github.com/cosmos/cosmos-sdk/server/rosetta/lib/server"
 	"github.com/cosmos/cosmos-sdk/server/types"
 	"github.com/cosmos/cosmos-sdk/telemetry"
-	"github.com/cosmos/cosmos-sdk/types/mempool"
-	"github.com/cosmos/cosmos-sdk/version"
-	genutiltypes "github.com/cosmos/cosmos-sdk/x/genutil/types"
+	sdktypes "github.com/cosmos/cosmos-sdk/types"
 )
 
 const (
@@ -217,7 +216,11 @@ func start[T types.Application](svrCtx *Context, clientCtx client.Context, appCr
 		return err
 	}
 
-	emitServerInfoMetrics()
+	app := appCreator(ctx.Logger, db, traceWriter, ctx.Viper)
+	_, err = startTelemetry(serverconfig.GetConfig(ctx.Viper))
+	if err != nil {
+		return err
+	}
 
 	if !withCmt {
 		return startStandAlone[T](svrCtx, svrCfg, clientCtx, app, metrics, opts)
@@ -398,6 +401,11 @@ func startInProcess[T types.Application](svrCtx *Context, svrCfg serverconfig.Co
 	return config, nil
 }
 
+	metrics, err := startTelemetry(config)
+	if err != nil {
+		return err
+	}
+
 	var apiSrv *api.Server
 	if config.API.Enable {
 		genDoc, err := genDocProvider()
@@ -412,11 +420,18 @@ func startInProcess[T types.Application](svrCtx *Context, svrCfg serverconfig.Co
 			return defaultGenesisDoc, err
 		}
 
-		bz, err := json.Marshal(genbz)
-		if err != nil {
-			return defaultGenesisDoc, err
+		apiSrv = api.New(clientCtx, ctx.Logger.With("module", "api-server"))
+		app.RegisterAPIRoutes(apiSrv, config.API)
+		if config.Telemetry.Enabled {
+			apiSrv.SetTelemetry(metrics)
 		}
-		sum := sha256.Sum256(bz)
+		errCh := make(chan error)
+
+		go func() {
+			if err := apiSrv.Start(config); err != nil {
+				errCh <- err
+			}
+		}()
 
 		select {
 		case err := <-errCh:
@@ -741,4 +756,11 @@ func testnetify[T types.Application](ctx *Context, testnetAppCreator types.AppCr
 
 	// wait for signal capture and gracefully return
 	return WaitForQuitSignals()
+}
+
+func startTelemetry(cfg config.Config) (*telemetry.Metrics, error) {
+	if !cfg.Telemetry.Enabled {
+		return nil, nil
+	}
+	return telemetry.New(cfg.Telemetry)
 }
