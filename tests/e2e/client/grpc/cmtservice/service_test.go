@@ -18,6 +18,8 @@ import (
 	cryptotypes "github.com/cosmos/cosmos-sdk/crypto/types"
 	"github.com/cosmos/cosmos-sdk/testutil"
 	"github.com/cosmos/cosmos-sdk/testutil/network"
+	"github.com/cosmos/cosmos-sdk/testutil/rest"
+	"github.com/cosmos/cosmos-sdk/types"
 	qtypes "github.com/cosmos/cosmos-sdk/types/query"
 	"github.com/cosmos/cosmos-sdk/version"
 )
@@ -55,8 +57,8 @@ func (s *E2ETestSuite) TearDownSuite() {
 	s.network.Cleanup()
 }
 
-func (s *E2ETestSuite) TestQueryNodeInfo() {
-	val := s.network.GetValidators()[0]
+func (s *IntegrationTestSuite) TestQueryNodeInfo() {
+	val := s.network.Validators[0]
 
 	res, err := s.queryClient.GetNodeInfo(context.Background(), &cmtservice.GetNodeInfoRequest{})
 	s.Require().NoError(err)
@@ -69,8 +71,8 @@ func (s *E2ETestSuite) TestQueryNodeInfo() {
 	s.Require().Equal(getInfoRes.ApplicationVersion.AppName, version.NewInfo().AppName)
 }
 
-func (s *E2ETestSuite) TestQuerySyncing() {
-	val := s.network.GetValidators()[0]
+func (s *IntegrationTestSuite) TestQuerySyncing() {
+	val := s.network.Validators[0]
 
 	_, err := s.queryClient.GetSyncing(context.Background(), &cmtservice.GetSyncingRequest{})
 	s.Require().NoError(err)
@@ -81,33 +83,34 @@ func (s *E2ETestSuite) TestQuerySyncing() {
 	s.Require().NoError(val.GetClientCtx().Codec.UnmarshalJSON(restRes, &syncingRes))
 }
 
-func (s *E2ETestSuite) TestQueryLatestBlock() {
-	val := s.network.GetValidators()[0]
+func (s *IntegrationTestSuite) TestQueryLatestBlock() {
+	val := s.network.Validators[0]
 
 	_, err := s.queryClient.GetLatestBlock(context.Background(), &cmtservice.GetLatestBlockRequest{})
 	s.Require().NoError(err)
 
 	restRes, err := testutil.GetRequest(fmt.Sprintf("%s/cosmos/base/tendermint/v1beta1/blocks/latest", val.GetAPIAddress()))
 	s.Require().NoError(err)
-	var blockInfoRes cmtservice.GetLatestBlockResponse
-	s.Require().NoError(val.GetClientCtx().Codec.UnmarshalJSON(restRes, &blockInfoRes))
-	s.Require().Contains(blockInfoRes.SdkBlock.Header.ProposerAddress, "cosmosvalcons")
+	var blockInfoRes tmservice.GetLatestBlockResponse
+	s.Require().NoError(val.ClientCtx.Codec.UnmarshalJSON(restRes, &blockInfoRes))
+	s.Require().Equal(types.ValAddress(blockInfoRes.Block.Header.ProposerAddress).String(), blockInfoRes.SdkBlock.Header.ProposerAddress)
+	s.Require().Contains(blockInfoRes.SdkBlock.Header.ProposerAddress, "cosmosvaloper")
 }
 
-func (s *E2ETestSuite) TestQueryBlockByHeight() {
-	val := s.network.GetValidators()[0]
-	_, err := s.queryClient.GetBlockByHeight(context.Background(), &cmtservice.GetBlockByHeightRequest{Height: 1})
+func (s *IntegrationTestSuite) TestQueryBlockByHeight() {
+	val := s.network.Validators[0]
+	_, err := s.queryClient.GetBlockByHeight(context.Background(), &tmservice.GetBlockByHeightRequest{Height: 1})
 	s.Require().NoError(err)
 
 	restRes, err := testutil.GetRequest(fmt.Sprintf("%s/cosmos/base/tendermint/v1beta1/blocks/%d", val.GetAPIAddress(), 1))
 	s.Require().NoError(err)
-	var blockInfoRes cmtservice.GetBlockByHeightResponse
-	s.Require().NoError(val.GetClientCtx().Codec.UnmarshalJSON(restRes, &blockInfoRes))
-	s.Require().Contains(blockInfoRes.SdkBlock.Header.ProposerAddress, "cosmosvalcons")
+	var blockInfoRes tmservice.GetBlockByHeightResponse
+	s.Require().NoError(val.ClientCtx.Codec.UnmarshalJSON(restRes, &blockInfoRes))
+	s.Require().Contains(blockInfoRes.SdkBlock.Header.ProposerAddress, "cosmosvaloper")
 }
 
-func (s *E2ETestSuite) TestQueryLatestValidatorSet() {
-	val := s.network.GetValidators()[0]
+func (s *IntegrationTestSuite) TestQueryLatestValidatorSet() {
+	val := s.network.Validators[0]
 
 	// nil pagination
 	res, err := s.queryClient.GetLatestValidatorSet(context.Background(), &cmtservice.GetLatestValidatorSetRequest{
@@ -141,8 +144,8 @@ func (s *E2ETestSuite) TestQueryLatestValidatorSet() {
 	s.Require().Equal(validatorSetRes.Validators[0].PubKey, anyPub)
 }
 
-func (s *E2ETestSuite) TestLatestValidatorSet_GRPC() {
-	vals := s.network.GetValidators()
+func (s *IntegrationTestSuite) TestLatestValidatorSet_GRPC() {
+	vals := s.network.Validators
 	testCases := []struct {
 		name      string
 		req       *cmtservice.GetLatestValidatorSetRequest
@@ -171,8 +174,8 @@ func (s *E2ETestSuite) TestLatestValidatorSet_GRPC() {
 	}
 }
 
-func (s *E2ETestSuite) TestLatestValidatorSet_GRPCGateway() {
-	vals := s.network.GetValidators()
+func (s *IntegrationTestSuite) TestLatestValidatorSet_GRPCGateway() {
+	vals := s.network.Validators
 	testCases := []struct {
 		name      string
 		url       string
@@ -202,8 +205,8 @@ func (s *E2ETestSuite) TestLatestValidatorSet_GRPCGateway() {
 	}
 }
 
-func (s *E2ETestSuite) TestValidatorSetByHeight_GRPC() {
-	vals := s.network.GetValidators()
+func (s *IntegrationTestSuite) TestValidatorSetByHeight_GRPC() {
+	vals := s.network.Validators
 	testCases := []struct {
 		name      string
 		req       *cmtservice.GetValidatorSetByHeightRequest
@@ -230,8 +233,8 @@ func (s *E2ETestSuite) TestValidatorSetByHeight_GRPC() {
 	}
 }
 
-func (s *E2ETestSuite) TestValidatorSetByHeight_GRPCGateway() {
-	vals := s.network.GetValidators()
+func (s *IntegrationTestSuite) TestValidatorSetByHeight_GRPCGateway() {
+	vals := s.network.Validators
 	testCases := []struct {
 		name      string
 		url       string
@@ -259,7 +262,7 @@ func (s *E2ETestSuite) TestValidatorSetByHeight_GRPCGateway() {
 	}
 }
 
-func (s *E2ETestSuite) TestABCIQuery() {
+func (s *IntegrationTestSuite) TestABCIQuery() {
 	testCases := []struct {
 		name         string
 		req          *cmtservice.ABCIQueryRequest
