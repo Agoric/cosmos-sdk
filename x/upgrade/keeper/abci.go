@@ -29,30 +29,6 @@ func (k Keeper) PreBlocker(ctx context.Context) error {
 	}
 	found := err == nil
 
-	if !k.DowngradeVerified() {
-		k.SetDowngradeVerified(true)
-		// This check will make sure that we are using a valid binary.
-		// It'll panic in these cases if there is no upgrade handler registered for the last applied upgrade.
-		// 1. If there is no scheduled upgrade.
-		// 2. If the plan is not ready.
-		// 3. If the plan is ready and skip upgrade height is set for current height.
-		if !found || !plan.ShouldExecute(blockHeight) || (plan.ShouldExecute(blockHeight) && k.IsSkipHeight(blockHeight)) {
-			lastAppliedPlan, _, err := k.GetLastCompletedUpgrade(ctx)
-			if err != nil {
-				return err
-			}
-
-			if lastAppliedPlan != "" && !k.HasHandler(lastAppliedPlan) {
-				appVersion, err := k.consensusKeeper.AppVersion(ctx)
-				if err != nil {
-					return err
-				}
-
-				return fmt.Errorf("wrong app version %d, upgrade handler is missing for %s upgrade plan", appVersion, lastAppliedPlan)
-			}
-		}
-	}
-
 	if !found {
 		return nil
 	}
@@ -104,7 +80,28 @@ func (k Keeper) PreBlocker(ctx context.Context) error {
 		// Returning an error will end up in a panic
 		return errors.New(downgradeMsg)
 	}
-	return nil
+
+	if !k.DowngradeVerified() {
+		k.SetDowngradeVerified(true)
+		lastAppliedPlan, _ := k.GetLastCompletedUpgrade(ctx)
+		// This check will make sure that we are using a valid binary.
+		// It'll panic in these cases if there is no upgrade handler registered for the last applied upgrade.
+		// 1. If there is no scheduled upgrade.
+		// 2. If the plan is not ready.
+		// 3. If the plan is ready and skip upgrade height is set for current height.
+		if !found || !plan.ShouldExecute(ctx) || (plan.ShouldExecute(ctx) && k.IsSkipHeight(ctx.BlockHeight())) {
+			if lastAppliedPlan != "" && !k.HasHandler(lastAppliedPlan) {
+				var appVersion uint64
+
+				cp := ctx.ConsensusParams()
+				if cp != nil && cp.Version != nil {
+					appVersion = cp.Version.AppVersion
+				}
+
+				panic(fmt.Sprintf("Wrong app version %d, upgrade handler is missing for %s upgrade plan", appVersion, lastAppliedPlan))
+			}
+		}
+	}
 }
 
 // BuildUpgradeNeededMsg prints the message that notifies that an upgrade is needed.
