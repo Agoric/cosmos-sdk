@@ -75,7 +75,7 @@ func (k Keeper) PreBlocker(ctx context.Context) error {
 		if !k.HasHandler(plan.Name) {
 			// Write the upgrade info to disk. The UpgradeStoreLoader uses this info to perform or skip
 			// store migrations.
-			err := k.DumpUpgradeInfoToDisk(blockHeight, plan)
+			err := k.DumpUpgradeInfoWithInfoToDisk(ctx.BlockHeight(), plan.Name, plan.Info) //nolint:staticcheck
 			if err != nil {
 				return fmt.Errorf("unable to write upgrade info to filesystem: %w", err)
 			}
