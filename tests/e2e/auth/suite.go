@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	abci "github.com/cometbft/cometbft/api/cometbft/abci/v1"
+	"cosmossdk.io/math"
 	"github.com/stretchr/testify/require"
 	"github.com/stretchr/testify/suite"
 
@@ -34,7 +34,6 @@ import (
 	"github.com/cosmos/cosmos-sdk/types/tx"
 	"github.com/cosmos/cosmos-sdk/types/tx/signing"
 	authcli "github.com/cosmos/cosmos-sdk/x/auth/client/cli"
-	"github.com/cosmos/cosmos-sdk/x/auth/types"
 	authtypes "github.com/cosmos/cosmos-sdk/x/auth/types"
 	bank "github.com/cosmos/cosmos-sdk/x/bank/client/cli"
 	bankcli "github.com/cosmos/cosmos-sdk/x/bank/client/testutil"
@@ -307,7 +306,7 @@ func (s *IntegrationTestSuite) TestCliGetAccountAddressByID() {
 				s.Require().Error(err)
 			} else {
 				s.Require().NoError(err)
-				var res types.QueryAccountAddressByIDResponse
+				var res authtypes.QueryAccountAddressByIDResponse
 				require.NoError(val1.ClientCtx.Codec.UnmarshalJSON(queryResJSON.Bytes(), &res))
 				require.NotNil(res.GetAccountAddress())
 			}
@@ -1386,6 +1385,9 @@ func (s *E2ETestSuite) TestMultisignBatch() {
 }
 
 func TestGetBroadcastCommandOfflineFlag(t *testing.T) {
+	clientCtx := client.Context{}.WithOffline(true)
+	clientCtx = clientCtx.WithTxConfig(simapp.MakeTestEncodingConfig().TxConfig) //nolint:staticcheck
+
 	cmd := authcli.GetBroadcastCommand()
 	_ = testutil.ApplyMockIODiscardOutErr(cmd)
 	cmd.SetArgs([]string{fmt.Sprintf("--%s=true", flags.FlagOffline), ""})
@@ -1850,8 +1852,7 @@ func (s *E2ETestSuite) TestAuxToFeeWithTips() {
 
 				s.Require().NoError(s.network.WaitForNextBlock())
 
-				switch {
-				case tc.expectErrBroadCast:
+				if tc.expectErrBroadCast { //nolint:gocritic
 					require.Error(err)
 
 				case tc.errMsg != "":
@@ -1890,8 +1891,8 @@ func (s *E2ETestSuite) createBankMsg(val network.ValidatorI, toAddr sdk.AccAddre
 	return clitestutil.SubmitTestTx(val.GetClientCtx(), msgSend, val.GetAddress(), config)
 }
 
-func (s *E2ETestSuite) getBalances(clientCtx client.Context, addr sdk.AccAddress, denom string) math.Int {
-	resp, err := testutil.GetRequest(fmt.Sprintf("%s/cosmos/bank/v1beta1/balances/%s/by_denom?denom=%s", s.cfg.APIAddress, addr.String(), denom))
+func (s *IntegrationTestSuite) getBalances(clientCtx client.Context, addr sdk.AccAddress, denom string) math.Int {
+	resp, err := bankcli.QueryBalancesExec(clientCtx, addr)
 	s.Require().NoError(err)
 
 	var balRes banktypes.QueryAllBalancesResponse

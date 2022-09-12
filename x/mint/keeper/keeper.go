@@ -1,14 +1,8 @@
 package keeper
 
 import (
-	"context"
-	"fmt"
-
-	"cosmossdk.io/collections"
-	"cosmossdk.io/core/appmodule"
-	"cosmossdk.io/core/event"
 	"cosmossdk.io/math"
-	"cosmossdk.io/x/mint/types"
+	"github.com/tendermint/tendermint/libs/log"
 
 	"github.com/cosmos/cosmos-sdk/codec"
 	"github.com/cosmos/cosmos-sdk/telemetry"
@@ -69,11 +63,10 @@ func NewKeeper(
 	return &k
 }
 
-// SetMintFn is used to mint new coins during BeginBlock. The mintFn function is in charge of
-// minting new coins based on arbitrary logic, previously done through InflationCalculationFn.
-func (k *Keeper) SetMintFn(mintFn types.MintFn) error {
-	k.mintFn = mintFn
-	return nil
+// StakingTokenSupply implements an alias call to the underlying staking keeper's
+// StakingTokenSupply to be used in BeginBlocker.
+func (k Keeper) StakingTokenSupply(ctx sdk.Context) math.Int {
+	return k.stakingKeeper.StakingTokenSupply(ctx)
 }
 
 // GetAuthority returns the x/mint module's authority.
