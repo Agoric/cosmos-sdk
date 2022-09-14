@@ -270,6 +270,41 @@ func (s *E2ETestSuite) TestCLISignBatch() {
 	_, err = authclitestutil.TxSignBatchExec(clientCtx, val.GetAddress(), malformedFile.Name(), fmt.Sprintf("--%s=%s", flags.FlagChainID, clientCtx.ChainID), "--signature-only")
 	s.Require().Error(err)
 
+	// make a txn to increase the sequence of sender
+	_, seq, err := val.ClientCtx.AccountRetriever.GetAccountNumberSequence(val.ClientCtx, val.Address)
+	s.Require().NoError(err)
+
+	account1, err := val.ClientCtx.Keyring.Key("newAccount1")
+	s.Require().NoError(err)
+
+	addr, err := account1.GetAddress()
+	s.Require().NoError(err)
+
+	// Send coins from validator to multisig.
+	_, err = s.createBankMsg(
+		val,
+		addr,
+		sdk.NewCoins(sdk.NewInt64Coin(s.cfg.BondDenom, 1000)),
+	)
+	s.Require().NoError(err)
+	s.Require().NoError(s.network.WaitForNextBlock())
+
+	// fetch the sequence after a tx, should be incremented.
+	_, seq1, err := val.ClientCtx.AccountRetriever.GetAccountNumberSequence(val.ClientCtx, val.Address)
+	s.Require().NoError(err)
+	s.Require().Equal(seq+1, seq1)
+
+	// signing sign-batch should start from the last sequence.
+	signed, err := TxSignBatchExec(val.ClientCtx, val.Address, outputFile.Name(), fmt.Sprintf("--%s=%s", flags.FlagChainID, val.ClientCtx.ChainID), "--signature-only")
+	s.Require().NoError(err)
+	signedTxs := strings.Split(strings.Trim(signed.String(), "\n"), "\n")
+	s.Require().GreaterOrEqual(len(signedTxs), 1)
+
+	sigs, err := s.cfg.TxConfig.UnmarshalSignatureJSON([]byte(signedTxs[0]))
+	s.Require().NoError(err)
+	s.Require().Equal(sigs[0].Sequence, seq1)
+}
+
 func (s *IntegrationTestSuite) TestCliGetAccountAddressByID() {
 	require := s.Require()
 	val1 := s.network.Validators[0]
@@ -427,6 +462,9 @@ func (s *E2ETestSuite) TestCLIQueryTxCmdByHash() {
 	)
 	s.Require().NoError(err)
 	s.Require().NoError(s.network.WaitForNextBlock())
+
+	var txRes sdk.TxResponse
+	s.Require().NoError(val.ClientCtx.Codec.UnmarshalJSON(out.Bytes(), &txRes))
 
 	var txRes sdk.TxResponse
 	s.Require().NoError(val.GetClientCtx().Codec.UnmarshalJSON(res.Bytes(), &txRes))
