@@ -495,13 +495,18 @@ func startGrpcServer(
 		if err != nil {
 			return err
 		}
-
+		defer grpcSrv.Stop()
 		if config.GRPCWeb.Enable {
 			grpcWebSrv, err = servergrpc.StartGRPCWeb(grpcSrv, config)
 			if err != nil {
 				ctx.Logger.Error("failed to start grpc-web http server: ", err)
 				return err
 			}
+			defer func() {
+				if err := grpcWebSrv.Close(); err != nil {
+					ctx.Logger.Error("failed to close grpc-web http server: ", err)
+				}
+			}()
 		}
 
 		defer func() {
@@ -582,11 +587,10 @@ func startApp[T types.Application](svrCtx *Context, appCreator types.AppCreator[
 		}
 	}
 
-	addStartNodeFlags(cmd, opts)
-	cmd.Flags().String(KeyTriggerTestnetUpgrade, "", "If set (example: \"v21\"), triggers the v21 upgrade handler to run on the first block of the testnet")
-	cmd.Flags().Bool("skip-confirmation", false, "Skip the confirmation prompt")
-	return cmd
-}
+	defer func() {
+		if tmNode != nil && tmNode.IsRunning() {
+			_ = tmNode.Stop()
+		}
 
 // testnetify modifies both state and blockStore, allowing the provided operator address and local validator key to control the network
 // that the state in the data folder represents. The chainID of the local genesis file is modified to match the provided chainID.
@@ -662,105 +666,8 @@ func testnetify[T types.Application](ctx *Context, testnetAppCreator types.AppCr
 		return nil, err
 	}
 
-	ctx.Viper.Set(KeyNewValAddr, validatorAddress)
-	ctx.Viper.Set(KeyUserPubKey, userPubKey)
-	testnetApp := testnetAppCreator(ctx.Logger, db, traceWriter, ctx.Viper)
-
-	// We need to create a temporary proxyApp to get the initial state of the application.
-	// Depending on how the node was stopped, the application height can differ from the blockStore height.
-	// This height difference changes how we go about modifying the state.
-	cmtApp := NewCometABCIWrapper(testnetApp)
-	_, context := getCtx(ctx, true)
-	clientCreator := proxy.NewLocalClientCreator(cmtApp)
-	metrics := node.DefaultMetricsProvider(cmtcfg.DefaultConfig().Instrumentation)
-	_, _, _, _, _, proxyMetrics, _, _ := metrics(genDoc.ChainID) //nolint: dogsled // function from comet
-	proxyApp := proxy.NewAppConns(clientCreator, proxyMetrics)
-	if err := proxyApp.Start(); err != nil {
-		return nil, fmt.Errorf("error starting proxy app connections: %w", err)
-	}
-	res, err := proxyApp.Query().Info(context, proxy.InfoRequest)
-	if err != nil {
-		return nil, fmt.Errorf("error calling Info: %w", err)
-	}
-	err = proxyApp.Stop()
-	if err != nil {
-		return nil, err
-	}
-	appHash := res.LastBlockAppHash
-	appHeight := res.LastBlockHeight
-
-	var block *cmttypes.Block
-	switch {
-	case appHeight == blockStore.Height():
-		block, _ = blockStore.LoadBlock(blockStore.Height())
-		// If the state's last blockstore height does not match the app and blockstore height, we likely stopped with the halt height flag.
-		if state.LastBlockHeight != appHeight {
-			state.LastBlockHeight = appHeight
-			block.AppHash = appHash
-			state.AppHash = appHash
-		} else {
-			// Node was likely stopped via SIGTERM, delete the next block's seen commit
-			err := blockStoreDB.Delete([]byte(fmt.Sprintf("SC:%v", blockStore.Height()+1)))
-			if err != nil {
-				return nil, err
-			}
-		}
-	case blockStore.Height() > state.LastBlockHeight:
-		// This state usually occurs when we gracefully stop the node.
-		err = blockStore.DeleteLatestBlock()
-		if err != nil {
-			return nil, err
-		}
-		block, _ = blockStore.LoadBlock(blockStore.Height())
-	default:
-		// If there is any other state, we just load the block
-		block, _ = blockStore.LoadBlock(blockStore.Height())
-	}
-
-	block.ChainID = newChainID
-	state.ChainID = newChainID
-
-	block.LastBlockID = state.LastBlockID
-	block.LastCommit.BlockID = state.LastBlockID
-
-	// Create a vote from our validator
-	vote := cmttypes.Vote{
-		Type:             cmtproto.PrecommitType,
-		Height:           state.LastBlockHeight,
-		Round:            0,
-		BlockID:          state.LastBlockID,
-		Timestamp:        time.Now(),
-		ValidatorAddress: validatorAddress,
-		ValidatorIndex:   0,
-		Signature:        []byte{},
-	}
-
-	// Sign the vote, and copy the proto changes from the act of signing to the vote itself
-	voteProto := vote.ToProto()
-	err = privValidator.SignVote(newChainID, voteProto, false)
-	if err != nil {
-		return nil, err
-	}
-	vote.Signature = voteProto.Signature
-	vote.Timestamp = voteProto.Timestamp
-
-	// Modify the block's lastCommit to be signed only by our validator
-	block.LastCommit.Signatures[0].ValidatorAddress = validatorAddress
-	block.LastCommit.Signatures[0].Signature = vote.Signature
-	block.LastCommit.Signatures = []cmttypes.CommitSig{block.LastCommit.Signatures[0]}
-
-	// Load the seenCommit of the lastBlockHeight and modify it to be signed from our validator
-	seenCommit := blockStore.LoadSeenCommit(state.LastBlockHeight)
-	seenCommit.BlockID = state.LastBlockID
-	seenCommit.Round = vote.Round
-	seenCommit.Signatures[0].Signature = vote.Signature
-	seenCommit.Signatures[0].ValidatorAddress = validatorAddress
-	seenCommit.Signatures[0].Timestamp = vote.Timestamp
-	seenCommit.Signatures = []cmttypes.CommitSig{seenCommit.Signatures[0]}
-	err = blockStore.SaveSeenCommit(state.LastBlockHeight, seenCommit)
-	if err != nil {
-		return nil, err
-	}
+		ctx.Logger.Info("exiting...")
+	}()
 
 	// wait for signal capture and gracefully return
 	return WaitForQuitSignals()
