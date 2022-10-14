@@ -91,14 +91,11 @@ func (op *LeafOp) CheckAgainstSpec(spec *ProofSpec) error {
 	lspec := spec.LeafSpec
 
 	if g(spec) {
-		fmt.Println("In IAVL spec")
+		fmt.Println("Dragonberry Active")
 		err := z(op, 0)
 		if err != nil {
 			return err
 		}
-	} else {
-		isTm := spec.SpecEquals(TendermintSpec)
-		fmt.Printf("not IAVL spec. Is TM? %v\n", isTm)
 	}
 
 	if op.Hash != lspec.Hash {
@@ -210,7 +207,8 @@ type opType interface {
 }
 
 // doLengthOp will calculate the proper prefix and return it prepended
-//   doLengthOp(op, data) -> length(data) || data
+//
+//	doLengthOp(op, data) -> length(data) || data
 func doLengthOp(lengthOp LengthOp, data []byte) ([]byte, error) {
 	switch lengthOp {
 	case LengthOp_NO_PREFIX:
