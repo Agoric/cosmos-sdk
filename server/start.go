@@ -401,7 +401,10 @@ func startInProcess[T types.Application](svrCtx *Context, svrCfg serverconfig.Co
 
 		app.RegisterTxService(clientCtx)
 		app.RegisterTendermintService(clientCtx)
-		app.RegisterNodeService(clientCtx)
+
+		if a, ok := app.(types.ApplicationQueryService); ok {
+			a.RegisterNodeService(clientCtx)
+		}
 	}
 	return config, nil
 }
