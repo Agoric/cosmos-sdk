@@ -99,28 +99,8 @@ func SortByteArrays(src [][]byte) [][]byte {
 	return sorted
 }
 
-func createTestSuite(t *testing.T) suite {
-	t.Helper()
-	res := suite{}
-
-	app, err := simtestutil.SetupWithConfiguration(
-		depinject.Configs(
-			configurator.NewAppConfig(
-				configurator.AccountsModule(),
-				configurator.AuthModule(),
-				configurator.StakingModule(),
-				configurator.BankModule(),
-				configurator.GovModule(),
-				configurator.ConsensusModule(),
-				configurator.ProtocolPoolModule(),
-			),
-			depinject.Supply(sdklog.NewNopLogger()),
-		),
-		simtestutil.DefaultStartUpConfig(),
-		&res.AccountKeeper, &res.BankKeeper, &res.GovKeeper, &res.StakingKeeper,
-	)
-	require.NoError(t, err)
-
-	res.app = app
-	return res
+var pubkeys = []cryptotypes.PubKey{
+	ed25519.GenPrivKey().PubKey(),
+	ed25519.GenPrivKey().PubKey(),
+	ed25519.GenPrivKey().PubKey(),
 }
