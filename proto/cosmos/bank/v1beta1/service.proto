@@ -1,0 +1,91 @@
+syntax = "proto3";
+package cosmos.bank.v1beta1;
+
+import "gogoproto/gogo.proto";
+import "cosmos/base/v1beta1/coin.proto";
+import "cosmos_proto/cosmos.proto";
+
+option go_package = "github.com/cosmos/cosmos-sdk/x/bank/types";
+
+// This file defines gRPC services to replace the family of bank keepers.
+// Where previously clients of bank module services would be given a
+// restricted view of the full-powered keeper, or would need module account
+// permissions to access various features, here we break groupings of
+// related authority into distinct services. By the Principle of Least
+// Authority, clients of bank services will be wired up to only those
+// services that they need via sercure dedicated gRPC links.
+//
+// This provides only "coarse-grained" ocaps in the spirit of the keeper
+// patters, but with a more sercure implementation. Fine-grained and
+// non-reentrant enhancements can be made with a bit more work.
+
+// ViewService is the analogue of the bank's ViewKeeper.
+service ViewService {
+  rpc GetBalance(GetBalanceRequest) returns (GetBalanceResponse);
+  rpc HasBalance(HasBalanceRequest) returns (HasBalanceResponse);
+  // ...other ViewKeeper methods
+}
+
+message GetBalanceRequest {
+  string address = 1 [(cosmos_proto.scalar) = "cosmos.AddressString"];
+  string denom = 2;
+}
+
+message GetBalanceResponse {
+    cosmos.base.v1beta1.Coin amount = 1;
+}
+
+message HasBalanceRequest {
+  string                   address = 1 [(cosmos_proto.scalar) = "cosmos.AddressString"];
+  cosmos.base.v1beta1.Coin amount  = 2;
+}
+
+message HasBalanceResponse {
+  bool has_balance = 1;
+}
+
+// SendService is the analogue of the banks's SendKeeper minus the ViewKeeper methods.
+service SendService {
+  rpc SendCoins(SendCoinsRequest) returns (SendCoinsResponse);
+  // ...other SendKeeper methods
+}
+
+message SendCoinsRequest {
+  string   from_address                    = 1 [(cosmos_proto.scalar) = "cosmos.AddressString"];
+  string   to_address                      = 2 [(cosmos_proto.scalar) = "cosmos.AddressString"];
+  repeated cosmos.base.v1beta1.Coin amount = 3
+      [(gogoproto.nullable) = false, (gogoproto.castrepeated) = "github.com/cosmos/cosmos-sdk/types.Coins"];
+}
+
+message SendCoinsResponse {}
+
+// MetadataService is the analogue of the bank's Keeper minus those methods split out to
+// other services, and minus the basic module mechanics (e.g. genesis methods).
+service MetadataService {
+  rpc GetSupply(GetSupplyRequest) returns (GetSupplyResponse);
+  // ...other Keeper methods not included elsewhere
+}
+
+message GetSupplyRequest {
+  string denom = 1;
+}
+
+message GetSupplyResponse {
+  cosmos.base.v1beta1.Coin supply = 1;
+}
+
+// MintService is the minting privilege. A client for this service will only be
+// given to those modules with the authority to mint.
+service MintService {
+  rpc MintCoins(MintCoinsRequest) returns (MintCoinsResponse);
+}
+
+message MintCoinsRequest {
+  string   to_address                      = 1 [(cosmos_proto.scalar) = "cosmos.AddressString"];
+  repeated cosmos.base.v1beta1.Coin amount = 2
+      [(gogoproto.nullable) = false, (gogoproto.castrepeated) = "github.com/cosmos/cosmos-sdk/types.Coins"];
+}
+
+message MintCoinsResponse {}
+
+// TODO: Burn service, etc.

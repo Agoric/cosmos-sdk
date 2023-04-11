@@ -1,8 +1,10 @@
 package keeper
 
 import (
+	"context"
 	"fmt"
 
+	"cosmossdk.io/core/modjewel"
 	"cosmossdk.io/math"
 
 	errorsmod "cosmossdk.io/errors"
@@ -467,3 +469,42 @@ func (k BaseViewKeeper) IterateTotalSupply(ctx sdk.Context, cb func(sdk.Coin) bo
 		return cb(sdk.NewCoin(s, m))
 	})
 }
+
+// viewServiceServer exposes a bank keeper for only the ViewService
+// A native modjewel implementation could use an entirely private structure.
+type viewServiceServer struct {
+	keeper Keeper
+}
+
+func (s viewServiceServer) GetBalance(goCtx context.Context, req *types.GetBalanceRequest) (*types.GetBalanceResponse, error) {
+	ctx := sdk.UnwrapSDKContext(goCtx)
+	amount := s.keeper.GetBalance(ctx, sdk.AccAddress(req.Address), req.Denom)
+	resp := types.GetBalanceResponse{
+		Amount: &amount,
+	}
+	return &resp, nil
+}
+
+func (s viewServiceServer) HasBalance(goCtx context.Context, req *types.HasBalanceRequest) (*types.HasBalanceResponse, error) {
+	ctx := sdk.UnwrapSDKContext(goCtx)
+	hasBalance := s.keeper.HasBalance(ctx, sdk.AccAddress(req.Address), *req.Amount)
+	resp := types.HasBalanceResponse{
+		HasBalance: hasBalance,
+	}
+	return &resp, nil
+}
+
+// NewViewServiceClient returns a ViewService client based on this bank keeper.
+// A holder of the client can only make calls through the viewServiceServer and
+// cannot access the underlying viewServiceServer or its contents.
+// It is thus a (coarse-grained) ocap.
+func (k BaseKeeper) NewViewServiceClient() types.ViewServiceClient {
+	cxn := modjewel.NewConnection()
+	types.RegisterViewServiceServer(cxn, viewServiceServer{keeper: k})
+	return types.NewViewServiceClient(cxn.MakeLocalClient())
+}
+
+// TODO: generate other ocap facets for the bank keeper
+// NewSendServiceClient()
+// NewMetadataServiceClient()
+// NewMintServiceClient()...
