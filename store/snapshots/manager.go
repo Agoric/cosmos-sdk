@@ -59,7 +59,7 @@ type Manager struct {
 	opts  types.SnapshotOptions
 	// multistore is the store from which snapshots are taken.
 	multistore types.Snapshotter
-	logger     storetypes.Logger
+	logger     log.Logger
 
 	mtx               sync.Mutex
 	operation         operation
@@ -319,7 +319,7 @@ func (m *Manager) Restore(snapshot types.Snapshot) error {
 
 	dir := m.store.pathSnapshot(snapshot.Height, snapshot.Format)
 	if err := os.MkdirAll(dir, 0o750); err != nil {
-		return errorsmod.Wrapf(err, "failed to create snapshot directory %q", dir)
+		return sdkerrors.Wrapf(err, "failed to create snapshot directory %q", dir)
 	}
 
 	chChunks := m.loadChunkStream(snapshot.Height, snapshot.Format, chChunkIDs)
@@ -362,10 +362,9 @@ func (m *Manager) loadChunkStream(height uint64, format uint32, chunkIDs <-chan 
 func (m *Manager) doRestoreSnapshot(snapshot types.Snapshot, chChunks <-chan io.ReadCloser) error {
 	dir := m.store.pathSnapshot(snapshot.Height, snapshot.Format)
 	if err := os.MkdirAll(dir, 0o750); err != nil {
-		return errorsmod.Wrapf(err, "failed to create snapshot directory %q", dir)
+		return sdkerrors.Wrapf(err, "failed to create snapshot directory %q", dir)
 	}
 
-	var nextItem types.SnapshotItem
 	streamReader, err := NewStreamReader(chChunks)
 	if err != nil {
 		return err
@@ -431,7 +430,7 @@ func (m *Manager) RestoreChunk(chunk []byte) (bool, error) {
 	}
 
 	if int(m.restoreChunkIndex) >= len(m.restoreSnapshot.Metadata.ChunkHashes) {
-		return false, errorsmod.Wrap(storetypes.ErrLogic, "received unexpected chunk")
+		return false, sdkerrors.Wrap(sdkerrors.ErrLogic, "received unexpected chunk")
 	}
 
 	// Check if any errors have occurred yet.
@@ -454,7 +453,7 @@ func (m *Manager) RestoreChunk(chunk []byte) (bool, error) {
 	}
 
 	if err := m.store.saveChunkContent(chunk, m.restoreChunkIndex, m.restoreSnapshot); err != nil {
-		return false, errorsmod.Wrapf(err, "save chunk content %d", m.restoreChunkIndex)
+		return false, sdkerrors.Wrapf(err, "save chunk content %d", m.restoreChunkIndex)
 	}
 
 	// Pass the chunk to the restore, and wait for completion if it was the final one.
@@ -468,7 +467,7 @@ func (m *Manager) RestoreChunk(chunk []byte) (bool, error) {
 		// the chunks are all written into files, we can save the snapshot to the db,
 		// even if the restoration may not completed yet.
 		if err := m.store.saveSnapshot(m.restoreSnapshot); err != nil {
-			return false, errorsmod.Wrap(err, "save restoring snapshot")
+			return false, sdkerrors.Wrap(err, "save restoring snapshot")
 		}
 
 		done := <-m.chRestoreDone
@@ -505,7 +504,7 @@ func (m *Manager) RestoreLocalSnapshot(height uint64, format uint32) error {
 	}
 	defer m.endLocked()
 
-	return m.restoreSnapshot(*snapshot, ch)
+	return m.doRestoreSnapshot(*snapshot, ch)
 }
 
 // sortedExtensionNames sort extension names for deterministic iteration.
