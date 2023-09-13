@@ -230,8 +230,17 @@ func TestManager_RestoreLargeItem(t *testing.T) {
 	err := manager.RegisterExtensions(extSnapshotter)
 	require.NoError(t, err)
 
-	// The protobuf wrapper introduces an extra byte
-	largeItem := make([]byte, snapshotMaxItemSize-4)
+	largeItem := make([]byte, snapshotMaxItemSize)
+
+	// The protobuf wrapper introduces extra bytes
+	adjustedSize := 2*snapshotMaxItemSize - (&types.SnapshotItem{
+		Item: &types.SnapshotItem_ExtensionPayload{
+			ExtensionPayload: &types.SnapshotExtensionPayload{
+				Payload: largeItem,
+			},
+		},
+	}).Size()
+	largeItem = largeItem[:adjustedSize]
 	expectItems := [][]byte{largeItem}
 
 	chunks := snapshotItems(expectItems, newExtSnapshotter(1))
@@ -269,7 +278,7 @@ func TestManager_CannotRestoreTooLargeItem(t *testing.T) {
 	err := manager.RegisterExtensions(extSnapshotter)
 	require.NoError(t, err)
 
-	// The protobuf wrapper introduces an extra byte
+	// The protobuf wrapper introduces extra bytes
 	largeItem := make([]byte, snapshotMaxItemSize)
 	expectItems := [][]byte{largeItem}
 
