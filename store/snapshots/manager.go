@@ -16,6 +16,29 @@ import (
 	storetypes "cosmossdk.io/store/types"
 )
 
+const (
+	opNone     operation = ""
+	opSnapshot operation = "snapshot"
+	opPrune    operation = "prune"
+	opRestore  operation = "restore"
+
+	chunkBufferSize = 4
+
+	// snapshotMaxItemSize limits the size of both KVStore entries and snapshot
+	// extension payloads during a state-sync restore.
+	// Unexported so copied in manager_test.go for testing
+	snapshotMaxItemSize = int(512e6)
+)
+
+// operation represents a Manager operation. Only one operation can be in progress at a time.
+type operation string
+
+// restoreDone represents the result of a restore operation.
+type restoreDone struct {
+	complete bool  // if true, restore completed successfully (not prematurely)
+	err      error // if non-nil, restore errored
+}
+
 // Manager manages snapshot and restore operations for an app, making sure only a single
 // long-running operation is in progress at any given time, and provides convenience methods
 // mirroring the ABCI interface.
