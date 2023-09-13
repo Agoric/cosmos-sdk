@@ -23,6 +23,7 @@ const (
 
 	// snapshotMaxItemSize limits the size of both KVStore entries and snapshot
 	// extension payloads during a state-sync restore.
+	// Unexported so copied in manager_test.go for testing
 	snapshotMaxItemSize = int(512e6)
 )
 

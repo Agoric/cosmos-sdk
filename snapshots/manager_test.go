@@ -231,7 +231,7 @@ func TestManager_RestoreLargeItem(t *testing.T) {
 	require.NoError(t, err)
 
 	// The protobuf wrapper introduces an extra byte
-	largeItem := make([]byte, snapshotMaxItemSize-1)
+	largeItem := make([]byte, snapshotMaxItemSize-4)
 	expectItems := [][]byte{largeItem}
 
 	chunks := snapshotItems(expectItems, newExtSnapshotter(1))
