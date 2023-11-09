@@ -5,8 +5,10 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"os"
 	"sort"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/gogo/protobuf/proto"
@@ -303,19 +305,24 @@ func (app *BaseApp) DeliverTx(req abci.RequestDeliverTx) (res abci.ResponseDeliv
 	}
 }
 
-// checkHalt checkes if height or time exceeds halt-height or halt-time respectively.
-func (app *BaseApp) checkHalt(height int64, time time.Time) {
-	var halt bool
-	switch {
-	case app.haltHeight > 0 && uint64(height) > app.haltHeight:
-		halt = true
-
-	case app.haltTime > 0 && time.Unix() > int64(app.haltTime):
-		halt = true
+// shouldHalt returns whether the chain should halt
+func (app *BaseApp) shouldHalt(height int64, time time.Time) bool {
+	if app.haltHeight > 0 && uint64(height) > app.haltHeight {
+		return true
 	}
 
-	if halt {
+	if app.haltTime > 0 && time.Unix() > int64(app.haltTime) {
+		return true
+	}
+	return false
+}
+
+// checkHalt checkes if height or time exceeds halt-height or halt-time respectively.
+func (app *BaseApp) checkHalt(height int64, time time.Time) {
+	if app.shouldHalt(height, time) {
 		app.logger.Info("halt per configuration", "height", app.haltHeight, "time", app.haltTime)
+		app.halt()
+		// it might take a sec to deiver signals, so ensure we don't make progress in the meantime
 		panic(errors.New("halt application"))
 	}
 }
@@ -382,6 +389,28 @@ func (app *BaseApp) CommitWithoutSnapshot() (abci.ResponseCommit, int64) {
 	}
 
 	return res, snapshotHeight
+}
+
+// halt attempts to gracefully shutdown the node via SIGINT and SIGTERM falling
+// back on os.Exit if both fail.
+func (app *BaseApp) halt() {
+	app.logger.Info("halting node per configuration", "height", app.haltHeight, "time", app.haltTime)
+
+	p, err := os.FindProcess(os.Getpid())
+	if err == nil {
+		// attempt cascading signals in case SIGINT fails (os dependent)
+		sigIntErr := p.Signal(syscall.SIGINT)
+		sigTermErr := p.Signal(syscall.SIGTERM)
+
+		if sigIntErr == nil || sigTermErr == nil {
+			return
+		}
+	}
+
+	// Resort to exiting immediately if the process could not be found or killed
+	// via SIGINT/SIGTERM signals.
+	app.logger.Info("failed to send SIGINT/SIGTERM; exiting...")
+	os.Exit(0)
 }
 
 // Snapshot takes a snapshot of the current state and prunes any old snapshottypes.

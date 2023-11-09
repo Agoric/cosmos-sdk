@@ -3,7 +3,6 @@ package baseapp
 import (
 	"encoding/json"
 	"fmt"
-	"strings"
 	"testing"
 	"time"
 
@@ -243,36 +242,12 @@ func TestABCI_HaltChain(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			defer func() {
-				rec := recover()
-				var err error
-				if rec != nil {
-					err = rec.(error)
-				}
-				if !tc.expHalt {
-					require.NoError(t, err)
-				} else {
-					require.Error(t, err)
-					require.True(t, strings.HasPrefix(err.Error(), "halt application"))
-				}
-			}()
-
 			app := NewBaseApp(
 				name, logger, db, nil,
 				SetHaltHeight(tc.haltHeight),
 				SetHaltTime(tc.haltTime),
 			)
-
-			app.InitChain(abci.RequestInitChain{
-				InitialHeight: tc.blockHeight,
-			})
-
-			app.BeginBlock(abci.RequestBeginBlock{
-				Header: tmproto.Header{
-					Height: tc.blockHeight,
-					Time:   time.Unix(tc.blockTime, 0),
-				},
-			})
+			require.Equal(t, tc.expHalt, app.shouldHalt(tc.blockHeight, time.Unix(tc.blockTime, 0)))
 		})
 	}
 }
