@@ -1080,7 +1080,7 @@ func flushMetadata(db dbm.DB, version int64, cInfo *types.CommitInfo, pruneHeigh
 	setLatestVersion(batch, version)
 	setPruningHeights(batch, pruneHeights)
 
-	if err := batch.Write(); err != nil {
+	if err := batch.WriteSync(); err != nil {
 		panic(fmt.Errorf("error on batch write %w", err))
 	}
 }
