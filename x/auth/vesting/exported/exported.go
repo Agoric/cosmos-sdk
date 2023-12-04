@@ -82,18 +82,9 @@ type GrantAccount interface {
 	AddGrant(ctx sdk.Context, action AddGrantAction) error
 }
 
-// ReturnGrantAccount is a VestingAccount that can return its grants to its funder.
-type ReturnGrantAccount interface {
-	VestingAccount
-
-	// ReturnGrants returns all grants to the funder.
-	ReturnGrants(ctx sdk.Context, action ReturnGrantAction) error
-}
-
 // ClawbackVestingAccountI is an interface for the methods of a clawback account.
 type ClawbackVestingAccountI interface {
 	GrantAccount
-	ReturnGrantAccount
 
 	// GetUnlockedOnly returns the sum of all unlocking events up to and including
 	// the blockTime.
@@ -108,4 +99,7 @@ type ClawbackVestingAccountI interface {
 
 	// PostReward preforms post-reward processing described by action.
 	PostReward(ctx sdk.Context, reward sdk.Coins, action RewardAction) error
+
+	// ReturnGrants returns all grants to the funder.
+	ReturnGrants(ctx sdk.Context, action ReturnGrantAction) error
 }
