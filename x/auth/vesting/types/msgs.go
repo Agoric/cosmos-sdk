@@ -18,7 +18,7 @@ const (
 	// TypeMsgClawback defines the type value for a MsgClawback.
 	TypeMsgClawback = "msg_clawback"
 
-	// TypeMsgClawback defines the type value for a MsgClawback.
+	// TypeMsgReturnGrants defines the type value for a MsgReturnGrants.
 	TypeMsgReturnGrants = "msg_return_grants"
 )
 
