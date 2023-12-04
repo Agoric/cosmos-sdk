@@ -39,6 +39,7 @@ func GetTxCmd() *cobra.Command {
 		NewMsgCreatePeriodicVestingAccountCmd(),
 		NewMsgCreateClawbackVestingAccountCmd(),
 		NewMsgClawbackCmd(),
+		NewMsgReturnGrantsCmd(),
 	)
 
 	return txCmd
@@ -316,26 +317,21 @@ func NewMsgClawbackCmd() *cobra.Command {
 // MsgReturnGrantsCmd transaction.
 func NewMsgReturnGrantsCmd() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   "return-grants [address]",
+		Use:   "return-grants",
 		Short: "Transfer grants out of a vesting account.",
 		Long: `Must be authorized by the vesting account itself.
 		All granted assets, including delegated and undelegating, vested and unvested,
 		are transferred to the original funder of the account. Might not be complete if
 		some vested assets have been transferred out of the account.
 		Currently only supported for ClawbackVestingAccount.`,
-		Args: cobra.ExactArgs(1),
+		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			clientCtx, err := client.GetClientTxContext(cmd)
 			if err != nil {
 				return err
 			}
 
-			addr, err := sdk.AccAddressFromBech32(args[0])
-			if err != nil {
-				return err
-			}
-
-			msg := types.NewMsgReturnGrants(addr)
+			msg := types.NewMsgReturnGrants(clientCtx.GetFromAddress())
 			if err := msg.ValidateBasic(); err != nil {
 				return err
 			}
@@ -343,5 +339,6 @@ func NewMsgReturnGrantsCmd() *cobra.Command {
 			return tx.GenerateOrBroadcastTxCLI(clientCtx, cmd.Flags(), msg)
 		},
 	}
+	flags.AddTxFlagsToCmd(cmd)
 	return cmd
 }
