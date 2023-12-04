@@ -402,7 +402,6 @@ func (s *IntegrationTestSuite) TestNewMsgReturnGrantsCmd() {
 	s.Require().NoError(err)
 
 	addr := sdk.AccAddress(info.GetPubKey().Address())
-	//addr := sdk.AccAddress("addr33______________")
 
 	_, err = clitestutil.ExecTestCLICmd(val.ClientCtx, cli.NewMsgCreateClawbackVestingAccountCmd(), []string{
 		addr.String(),
