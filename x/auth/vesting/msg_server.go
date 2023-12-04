@@ -359,13 +359,13 @@ func (s msgServer) ReturnGrants(goCtx context.Context, msg *types.MsgReturnGrant
 	if acc == nil {
 		return nil, sdkerrors.Wrapf(sdkerrors.ErrNotFound, "account %s does not exist", msg.Address)
 	}
-	rga, ok := acc.(exported.ReturnGrantAccount)
+	va, ok := acc.(exported.ClawbackVestingAccountI)
 	if !ok {
 		return nil, sdkerrors.Wrapf(sdkerrors.ErrInvalidRequest, "account does not support return-grants: %s", msg.Address)
 	}
 
 	returnGrantsAction := types.NewReturnGrantAction(ak, bk, sk)
-	err = rga.ReturnGrants(ctx, returnGrantsAction)
+	err = va.ReturnGrants(ctx, returnGrantsAction)
 	if err != nil {
 		return nil, err
 	}
