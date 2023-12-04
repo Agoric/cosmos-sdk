@@ -1196,12 +1196,12 @@ func (va *BaseVestingAccount) forceTransfer(ctx sdk.Context, amt sdk.Coins, dest
 	// sum in meaningful. Furthermore, DF/DV is not updated
 
 	gotCoins := sdk.NewCoins(sdk.NewCoin(bondDenom, got))
-	free := coinsMin(gotCoins, va.DelegatedFree)
-	va.DelegatedFree = va.DelegatedFree.Sub(free)
-	gotCoins = gotCoins.Sub(free)
-	vesting := coinsMin(gotCoins, va.DelegatedVesting)
-	va.DelegatedVesting = va.DelegatedVesting.Sub(vesting)
-	gotCoins = gotCoins.Sub(vesting)
+	decrFree := coinsMin(gotCoins, va.DelegatedFree)
+	va.DelegatedFree = va.DelegatedFree.Sub(decrFree)
+	gotCoins = gotCoins.Sub(decrFree)
+	decrVesting := coinsMin(gotCoins, va.DelegatedVesting)
+	va.DelegatedVesting = va.DelegatedVesting.Sub(decrVesting)
+	gotCoins = gotCoins.Sub(decrVesting)
 	ak.SetAccount(ctx, va)
 	// gotCoins should be zero at this point, unless DF+DV was not accurate
 
@@ -1254,7 +1254,7 @@ func (va *ClawbackVestingAccount) returnGrants(ctx sdk.Context, ak AccountKeeper
 	va.VestingPeriods = []Period{}
 	va.DelegatedFree = va.DelegatedFree.Add(va.DelegatedVesting...)
 	va.DelegatedVesting = sdk.NewCoins()
-	va.EndTime = va.StartTime + 1
+	va.EndTime = va.StartTime
 
 	// Store the modified account so that all funds are vested and unlocked,
 	// which will allow funds to be transferred via normal means.
