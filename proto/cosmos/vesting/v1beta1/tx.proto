@@ -106,8 +106,11 @@ message MsgClawback {
 // MsgClawbackResponse defines the MsgClawback response type.
 message MsgClawbackResponse {}
 
-// MsgReturnGrants defines a message for a grantee to return the unvested portion of a
-// vesting grant to the funder. Currently only applies to ClawbackVesting accounts.
+// MsgReturnGrants defines a message for a grantee to return all granted assets,
+// including delegated, undelegated and unbonding, vested and unvested,
+// are transferred to the original funder of the account. Might not be complete if
+// some vested assets have been transferred out of the account. Currently only applies to
+// ClawbackVesting accounts.
 message MsgReturnGrants {
   // address is the address of the grantee account returning the grant.
   string address = 1;

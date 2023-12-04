@@ -1119,9 +1119,9 @@ func (va *ClawbackVestingAccount) clawback(ctx sdk.Context, dest sdk.AccAddress,
 // Any unbonding or staked tokens transferred are deducted from
 // the DelegatedFree/Vesting fields.
 // TODO: refactor to de-dup with clawback()
-func (va *BaseVestingAccount) forceTransfer(ctx sdk.Context, amt sdk.Coins, dest sdk.AccAddress, ak AccountKeeper, bk BankKeeper, sk StakingKeeper) error {
+func (va *BaseVestingAccount) forceTransfer(ctx sdk.Context, amt sdk.Coins, dest sdk.AccAddress, ak AccountKeeper, bk BankKeeper, sk StakingKeeper) {
 	if amt.IsZero() {
-		return nil
+		return
 	}
 	addr := va.GetAddress()
 
@@ -1131,7 +1131,7 @@ func (va *BaseVestingAccount) forceTransfer(ctx sdk.Context, amt sdk.Coins, dest
 	toXfer := coinsMin(amt, spendable)
 	err := bk.SendCoins(ctx, addr, dest, toXfer)
 	if err != nil {
-		return err // shouldn't happen, given spendable check
+		panic(err) // shouldn't happen, given spendable check
 	}
 	amt = amt.Sub(toXfer)
 
@@ -1143,7 +1143,7 @@ func (va *BaseVestingAccount) forceTransfer(ctx sdk.Context, amt sdk.Coins, dest
 	bondDenom := sk.BondDenom(ctx)
 	want := amt.AmountOf(bondDenom)
 	if !want.IsPositive() {
-		return nil
+		return
 	}
 	got := sdk.NewInt(0)
 	unbondings := sk.GetUnbondingDelegations(ctx, addr, math.MaxUint16)
@@ -1178,6 +1178,7 @@ func (va *BaseVestingAccount) forceTransfer(ctx sdk.Context, amt sdk.Coins, dest
 				// validator has no tokens
 				continue
 			}
+			// the following might transfer fewer shares than wanted
 			transferredShares := sk.TransferDelegation(ctx, addr, dest, delegation.GetValidatorAddr(), wantShares)
 			// to be conservative in what we're clawing back, round transferred shares up
 			transferred := validator.TokensFromSharesRoundUp(transferredShares).RoundInt()
@@ -1193,7 +1194,10 @@ func (va *BaseVestingAccount) forceTransfer(ctx sdk.Context, amt sdk.Coins, dest
 
 	// Reduce DelegatedFree/Vesting by actual unbonding/staked amount transferred.
 	// The distinction between DF and DV is not significant in practice - only the
-	// sum in meaningful. Furthermore, DF/DV is not updated
+	// sum is meaningful. Furthermore, DF/DV is not updated on each vesting event,
+	// so the distinction isn't required to be exact. Nevertheless, we'll prefer to
+	// overlap the "delegated" and "vesting" encumbrances as much as possible, so
+	// we'll decrement DF first.
 
 	gotCoins := sdk.NewCoins(sdk.NewCoin(bondDenom, got))
 	decrFree := coinsMin(gotCoins, va.DelegatedFree)
@@ -1206,8 +1210,7 @@ func (va *BaseVestingAccount) forceTransfer(ctx sdk.Context, amt sdk.Coins, dest
 	// gotCoins should be zero at this point, unless DF+DV was not accurate
 
 	// If we've transferred everything and still haven't transferred the desired clawback amount,
-	// then the account must have most some unvested tokens from slashing.
-	return nil
+	// then the account must have lost some unvested tokens from slashing.
 }
 
 // returnGrantAction implements exported.ReturnGrantAction.
@@ -1233,7 +1236,8 @@ func (rga returnGrantAction) TakeGrants(ctx sdk.Context, rawAccount exported.Ves
 	if !ok {
 		return sdkerrors.Wrapf(sdkerrors.ErrNotSupported, "return-grants not supported on account type %T", rawAccount)
 	}
-	return cva.returnGrants(ctx, rga.ak, rga.bk, rga.sk)
+	cva.returnGrants(ctx, rga.ak, rga.bk, rga.sk)
+	return nil
 }
 
 // ReturnGrants implements exported.ReturnGrantsAccount.
@@ -1242,9 +1246,10 @@ func (va *ClawbackVestingAccount) ReturnGrants(ctx sdk.Context, action exported.
 }
 
 // returnGrants transfers the original vesting tokens back to the funder, zeroing out all grant-related accounting.
-// It prefers to transfer unbonded tokens from the account, wil will transfer unbonding or staked tokens.
-func (va *ClawbackVestingAccount) returnGrants(ctx sdk.Context, ak AccountKeeper, bk BankKeeper, sk StakingKeeper) error {
-	// XXX withdraw rewards
+// It prefers to transfer unbonded tokens from the account, but will transfer unbonding or staked tokens
+// if necessary.
+func (va *ClawbackVestingAccount) returnGrants(ctx sdk.Context, ak AccountKeeper, bk BankKeeper, sk StakingKeeper) {
+	// TODO withdraw rewards - requires integration with DistributionKeeper
 	toReturn := va.OriginalVesting
 	if toReturn.IsZero() {
 		return nil
@@ -1260,7 +1265,7 @@ func (va *ClawbackVestingAccount) returnGrants(ctx sdk.Context, ak AccountKeeper
 	// which will allow funds to be transferred via normal means.
 	ak.SetAccount(ctx, va)
 
-	return va.forceTransfer(ctx, toReturn, va.GetFunder(), ak, bk, sk)
+	va.forceTransfer(ctx, toReturn, va.GetFunder(), ak, bk, sk)
 }
 
 // distributeReward adds the reward to the future vesting schedule in proportion to the future vesting

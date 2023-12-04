@@ -1603,7 +1603,7 @@ func TestReturnGrants(t *testing.T) {
 	require.False(t, found)
 
 	// check destination account
-	// want 1000fee, 83stake (18 unbonded, 5 unboinding, 60 bonded)
+	// want 1000fee, 83stake (18 unbonded, 5 unbonding, 60 bonded)
 
 	feeAmt = app.BankKeeper.GetBalance(ctx, dest, feeDenom).Amount
 	require.Equal(t, int64(1000), feeAmt.Int64())
