@@ -1252,7 +1252,7 @@ func (va *ClawbackVestingAccount) returnGrants(ctx sdk.Context, ak AccountKeeper
 	// TODO withdraw rewards - requires integration with DistributionKeeper
 	toReturn := va.OriginalVesting
 	if toReturn.IsZero() {
-		return nil
+		return
 	}
 	va.OriginalVesting = sdk.NewCoins()
 	va.LockupPeriods = []Period{}
