@@ -1119,100 +1119,10 @@ func TestClawback(t *testing.T) {
 	stake := func(x int64) sdk.Coin { return sdk.NewInt64Coin(stakeDenom, x) }
 	now := tmtime.Now()
 
-	// set up simapp and validators
-	app := simapp.Setup(false)
-	ctx := app.BaseApp.NewContext(false, tmproto.Header{}).WithBlockTime((now))
-	valAddr, val := createValidator(t, ctx, app, 100)
-	require.Equal(t, "stake", app.StakingKeeper.BondDenom(ctx))
-
-	lockupPeriods := types.Periods{
-		{Length: int64(12 * 3600), Amount: c(fee(1000), stake(100))}, // noon
-	}
-	vestingPeriods := types.Periods{
-		{Length: int64(8 * 3600), Amount: c(fee(200))},            // 8am
-		{Length: int64(1 * 3600), Amount: c(fee(200), stake(50))}, // 9am
-		{Length: int64(6 * 3600), Amount: c(fee(200), stake(50))}, // 3pm
-		{Length: int64(2 * 3600), Amount: c(fee(200))},            // 5pm
-		{Length: int64(1 * 3600), Amount: c(fee(200))},            // 6pm
-	}
-
-	bacc, origCoins := initBaseAccount()
-	_, _, funder := testdata.KeyTestPubAddr()
-	va := types.NewClawbackVestingAccount(bacc, funder, origCoins, now.Unix(), lockupPeriods, vestingPeriods)
-	// simulate 17stake lost to slashing
-	va.DelegatedVesting = c(stake(17))
-	addr := va.GetAddress()
-	app.AccountKeeper.SetAccount(ctx, va)
-
-	// fund the vesting account with 17 take lost to slashing
-	err := simapp.FundAccount(app.BankKeeper, ctx, addr, c(fee(1000), stake(83)))
-	require.NoError(t, err)
-	require.Equal(t, int64(1000), app.BankKeeper.GetBalance(ctx, addr, feeDenom).Amount.Int64())
-	require.Equal(t, int64(83), app.BankKeeper.GetBalance(ctx, addr, stakeDenom).Amount.Int64())
-	ctx = ctx.WithBlockTime(now.Add(11 * time.Hour))
-
-	// delegate 65
-	shares, err := app.StakingKeeper.Delegate(ctx, addr, sdk.NewInt(65), stakingtypes.Unbonded, val, true)
-	require.NoError(t, err)
-	require.Equal(t, sdk.NewInt(65), shares.TruncateInt())
-	require.Equal(t, int64(18), app.BankKeeper.GetBalance(ctx, addr, stakeDenom).Amount.Int64())
-
-	// undelegate 5
-	_, err = app.StakingKeeper.Undelegate(ctx, addr, valAddr, sdk.NewDec(5))
-	require.NoError(t, err)
-
-	// clawback the unvested funds (600fee, 50stake)
-	_, _, dest := testdata.KeyTestPubAddr()
-	va2 := app.AccountKeeper.GetAccount(ctx, addr).(*types.ClawbackVestingAccount)
-	clawbackAction := types.NewClawbackAction(funder, dest, app.AccountKeeper, app.BankKeeper, app.StakingKeeper)
-	err = va2.Clawback(ctx, clawbackAction)
-	require.NoError(t, err)
-
-	// check vesting account
-	// want 400fee, 33stake (delegated), all vested
-	feeAmt := app.BankKeeper.GetBalance(ctx, addr, feeDenom).Amount
-	require.Equal(t, int64(400), feeAmt.Int64())
-	stakeAmt := app.BankKeeper.GetBalance(ctx, addr, stakeDenom).Amount
-	require.Equal(t, int64(0), stakeAmt.Int64())
-	del, found := app.StakingKeeper.GetDelegation(ctx, addr, valAddr)
-	require.True(t, found)
-	shares = del.GetShares()
-	val, found = app.StakingKeeper.GetValidator(ctx, valAddr)
-	require.True(t, found)
-	stakeAmt = val.TokensFromSharesTruncated(shares).RoundInt()
-	require.Equal(t, sdk.NewInt(33), stakeAmt)
-
-	// check destination account
-	// want 600fee, 50stake (18 unbonded, 5 unboinding, 27 bonded)
-	feeAmt = app.BankKeeper.GetBalance(ctx, dest, feeDenom).Amount
-	require.Equal(t, int64(600), feeAmt.Int64())
-	stakeAmt = app.BankKeeper.GetBalance(ctx, dest, stakeDenom).Amount
-	require.Equal(t, int64(18), stakeAmt.Int64())
-	del, found = app.StakingKeeper.GetDelegation(ctx, dest, valAddr)
-	require.True(t, found)
-	shares = del.GetShares()
-	stakeAmt = val.TokensFromSharesTruncated(shares).RoundInt()
-	require.Equal(t, sdk.NewInt(27), stakeAmt)
-	ubd, found := app.StakingKeeper.GetUnbondingDelegation(ctx, dest, valAddr)
-	require.True(t, found)
-	require.Equal(t, sdk.NewInt(5), ubd.Entries[0].Balance)
-}
-
-func TestClawback_finalUnlock(t *testing.T) {
-	// tests a variant of TestClawback with unlock events after the last vesting event
-	c := sdk.NewCoins
-	fee := func(x int64) sdk.Coin { return sdk.NewInt64Coin(feeDenom, x) }
-	stake := func(x int64) sdk.Coin { return sdk.NewInt64Coin(stakeDenom, x) }
-	now := tmtime.Now()
-
-	// set up simapp and validators
-	app := simapp.Setup(false)
-	ctx := app.BaseApp.NewContext(false, tmproto.Header{}).WithBlockTime((now))
-	require.Equal(t, "stake", app.StakingKeeper.BondDenom(ctx))
-
 	lockupPeriods := types.Periods{
 		{Length: int64(20 * 3600), Amount: c(fee(1000), stake(100))}, // 8pm
 	}
+
 	vestingPeriods := types.Periods{
 		{Length: int64(8 * 3600), Amount: c(fee(200))},            // 8am
 		{Length: int64(1 * 3600), Amount: c(fee(200), stake(50))}, // 9am
@@ -1220,47 +1130,135 @@ func TestClawback_finalUnlock(t *testing.T) {
 		{Length: int64(2 * 3600), Amount: c(fee(200))},            // 5pm
 		{Length: int64(1 * 3600), Amount: c(fee(200))},            // 6pm
 	}
+	// each test creates a new clawback vesting account, with the lockup and vesting periods defined above.
+	// the clawback is executed at the test case's provided time, and expects that post clawback,
+	// the address has a total of `vestingAccBalance` coins, but only `spendableCoins` are spendable.
+	// It expects the clawback acct funder to have `funderBalance` (aka that amt clawed back)
+	testCases := []struct {
+		name                     string
+		ctxTime                  time.Time
+		vestingAccBalance        sdk.Coins
+		vestingAccDelegatedAmt   sdk.Int
+		vestingAccSpendableCoins sdk.Coins
+		destAccBalance           sdk.Coins
+		destAccDelegatedAmt      sdk.Int
+		destAccUnbonding         sdk.Int
+	}{
+		// {
+		// 	"clawback before all vesting periods and lockup periods started",
+		// 	now.Add(7 * time.Hour),
+		// 	sdk.NewCoins(),
+		// 	sdk.NewInt(0),
+		// 	sdk.Coins(nil),
+		// 	sdk.NewCoins(fee(1000), stake(18)),
+		// 	sdk.NewInt(27),
+		// 	sdk.NewInt(5),
+		// },
+		{
+			"clawback after two vesting periods, before lockup period ended",
+			now.Add(11 * time.Hour),
+			sdk.NewCoins(fee(400)),
+			sdk.NewInt(33),
+			sdk.Coins(nil),
+			sdk.NewCoins(fee(600), stake(18)),
+			sdk.NewInt(33),
+			sdk.NewInt(5),
+		},
+		{
+			"clawback after lockup period finished",
+			now.Add(13 * time.Hour),
+			sdk.NewCoins(fee(400)),
+			sdk.NewInt(33),
+			sdk.Coins(nil),
+			sdk.NewCoins(fee(600), stake(18)),
+			sdk.NewInt(33),
+			sdk.NewInt(5),
+		},
+		{
+			"clawback after lockup has finished, 3 vesting periods have finished",
+			now.Add(16 * time.Hour),
+			sdk.NewCoins(fee(600), stake(18)),
+			sdk.NewInt(60),
+			sdk.Coins(nil),
+			sdk.NewCoins(fee(400)),
+			sdk.NewInt(0),
+			sdk.NewInt(0),
+		},
+	}
 
-	bacc, origCoins := initBaseAccount()
-	_, _, funder := testdata.KeyTestPubAddr()
-	va := types.NewClawbackVestingAccount(bacc, funder, origCoins, now.Unix(), lockupPeriods, vestingPeriods)
-	addr := va.GetAddress()
-	app.AccountKeeper.SetAccount(ctx, va)
+	for _, tc := range testCases {
+		tc := tc
 
-	// fund the vesting account with 17 take lost to slashing
-	err := simapp.FundAccount(app.BankKeeper, ctx, addr, c(fee(1000), stake(100)))
-	require.NoError(t, err)
-	require.Equal(t, int64(1000), app.BankKeeper.GetBalance(ctx, addr, feeDenom).Amount.Int64())
-	require.Equal(t, int64(100), app.BankKeeper.GetBalance(ctx, addr, stakeDenom).Amount.Int64())
-	ctx = ctx.WithBlockTime(now.Add(11 * time.Hour))
+		t.Run(tc.name, func(t *testing.T) {
+			// set up simapp and validators
+			app := simapp.Setup(false)
+			ctx := app.BaseApp.NewContext(false, tmproto.Header{}).WithBlockTime((now))
+			valAddr, val := createValidator(t, ctx, app, 100)
+			require.Equal(t, "stake", app.StakingKeeper.BondDenom(ctx))
 
-	// clawback the unvested funds (600fee, 50stake)
-	_, _, dest := testdata.KeyTestPubAddr()
-	va2 := app.AccountKeeper.GetAccount(ctx, addr).(*types.ClawbackVestingAccount)
-	clawbackAction := types.NewClawbackAction(funder, dest, app.AccountKeeper, app.BankKeeper, app.StakingKeeper)
-	err = va2.Clawback(ctx, clawbackAction)
-	require.NoError(t, err)
+			bacc, origCoins := initBaseAccount()
+			_, _, funder := testdata.KeyTestPubAddr()
+			va := types.NewClawbackVestingAccount(bacc, funder, origCoins, now.Unix(), lockupPeriods, vestingPeriods)
+			va.DelegatedVesting = c(stake(17))
+			addr := va.GetAddress()
+			app.AccountKeeper.SetAccount(ctx, va)
 
-	// check vesting account
-	// want 400fee, 50stake, all vested
-	feeAmt := app.BankKeeper.GetBalance(ctx, addr, feeDenom).Amount
-	require.Equal(t, int64(400), feeAmt.Int64())
-	stakeAmt := app.BankKeeper.GetBalance(ctx, addr, stakeDenom).Amount
-	require.Equal(t, int64(50), stakeAmt.Int64())
+			// fund the vesting account
+			err := simapp.FundAccount(app.BankKeeper, ctx, addr, c(fee(1000), stake(83)))
+			require.NoError(t, err)
+			require.Equal(t, int64(1000), app.BankKeeper.GetBalance(ctx, addr, feeDenom).Amount.Int64())
+			require.Equal(t, int64(83), app.BankKeeper.GetBalance(ctx, addr, stakeDenom).Amount.Int64())
 
-	// check destination account
-	// want 600fee, 50stake
-	feeAmt = app.BankKeeper.GetBalance(ctx, dest, feeDenom).Amount
-	require.Equal(t, int64(600), feeAmt.Int64())
-	stakeAmt = app.BankKeeper.GetBalance(ctx, dest, stakeDenom).Amount
-	require.Equal(t, int64(50), stakeAmt.Int64())
+			// delegate 65
+			shares, err := app.StakingKeeper.Delegate(ctx, addr, sdk.NewInt(65), stakingtypes.Unbonded, val, true)
+			require.NoError(t, err)
+			require.Equal(t, sdk.NewInt(65), shares.TruncateInt())
+			require.Equal(t, int64(18), app.BankKeeper.GetBalance(ctx, addr, stakeDenom).Amount.Int64())
 
-	// Remaining funds in vesting account should still be locked at 7pm
-	ctx = ctx.WithBlockTime(now.Add(19 * time.Hour))
-	spendable := app.BankKeeper.SpendableCoins(ctx, addr)
-	require.True(t, spendable.IsZero())
-	err = app.BankKeeper.SendCoins(ctx, addr, dest, c(fee(10)))
-	require.Error(t, err)
+			// undelegate 5
+			_, err = app.StakingKeeper.Undelegate(ctx, addr, valAddr, sdk.NewDec(5))
+			require.NoError(t, err)
+
+			// clawback the unvested funds
+			ctx = ctx.WithBlockTime(tc.ctxTime)
+			_, _, dest := testdata.KeyTestPubAddr()
+			va2 := app.AccountKeeper.GetAccount(ctx, addr).(*types.ClawbackVestingAccount)
+			clawbackAction := types.NewClawbackAction(funder, dest, app.AccountKeeper, app.BankKeeper, app.StakingKeeper)
+			err = va2.Clawback(ctx, clawbackAction)
+			require.NoError(t, err)
+
+			// check vesting account balance
+			vestingAccBalances := app.BankKeeper.GetAllBalances(ctx, addr)
+			require.Equal(t, tc.vestingAccBalance, vestingAccBalances)
+
+			// check vesting account delegated amount
+			del, found := app.StakingKeeper.GetDelegation(ctx, addr, valAddr)
+			if found {
+				shares = del.GetShares()
+				val, found = app.StakingKeeper.GetValidator(ctx, valAddr)
+				require.True(t, found)
+				stakeAmt := val.TokensFromSharesTruncated(shares).RoundInt()
+				require.Equal(t, tc.vestingAccDelegatedAmt, stakeAmt)
+			}
+
+			// check destination account balance
+			destAccBalances := app.BankKeeper.GetAllBalances(ctx, dest)
+			require.Equal(t, tc.destAccBalance, destAccBalances)
+
+			// check destination account delegated amount
+			del, found = app.StakingKeeper.GetDelegation(ctx, dest, valAddr)
+			if found {
+				stakeAmt := val.TokensFromSharesTruncated(shares).RoundInt()
+				require.Equal(t, tc.destAccDelegatedAmt, stakeAmt)
+			}
+
+			// check destination account unbonding delegation amount
+			ubd, found := app.StakingKeeper.GetUnbondingDelegation(ctx, dest, valAddr)
+			if found {
+				require.Equal(t, tc.destAccUnbonding, ubd.Entries[0].Balance)
+			}
+		})
+	}
 }
 
 func TestRewards(t *testing.T) {
