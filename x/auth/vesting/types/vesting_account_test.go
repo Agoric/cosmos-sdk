@@ -1618,6 +1618,7 @@ func TestReturnGrants(t *testing.T) {
 	require.Equal(t, sdk.NewInt(60), stakeAmt)
 	ubd, found := app.StakingKeeper.GetUnbondingDelegation(ctx, dest, valAddr)
 	require.True(t, found)
+	require.Equal(t, 1, len(ubd.Entries))
 	require.Equal(t, sdk.NewInt(5), ubd.Entries[0].Balance)
 }
 
