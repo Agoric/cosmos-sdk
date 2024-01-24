@@ -309,19 +309,6 @@ func (app *BaseApp) DeliverTx(req abci.RequestDeliverTx) (res abci.ResponseDeliv
 // against that height and gracefully halt if it matches the latest committed
 // height.
 func (app *BaseApp) Commit() abci.ResponseCommit {
-	res, snapshotHeight := app.CommitWithoutSnapshot()
-
-	if snapshotHeight > 0 {
-		go app.snapshotManager.SnapshotIfApplicable(snapshotHeight)
-	}
-
-	return res
-}
-
-// CommitWithoutSnapshot is like Commit but instead of starting the snapshot goroutine
-// it returns a positive snapshot height.
-// It can be used by apps to synchronize snapshots according to their requirements.
-func (app *BaseApp) CommitWithoutSnapshot() (abci.ResponseCommit, int64) {
 	header := app.deliverState.ctx.BlockHeader()
 	retainHeight := app.GetBlockRetentionHeight(header.Height)
 
@@ -372,7 +359,9 @@ func (app *BaseApp) CommitWithoutSnapshot() (abci.ResponseCommit, int64) {
 		app.halt()
 	}
 
-	return res, header.Height
+	go app.snapshotManager.SnapshotIfApplicable(header.Height)
+
+	return res
 }
 
 // halt attempts to gracefully shutdown the node via SIGINT and SIGTERM falling
