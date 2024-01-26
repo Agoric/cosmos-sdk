@@ -522,6 +522,9 @@ func (m *Manager) SnapshotIfApplicable(height int64) {
 
 // ShouldTakeSnapshot returns true if a snapshot should be taken at height.
 func (m *Manager) ShouldTakeSnapshot(height int64) bool {
+	if m == nil {
+		return false
+	}
 	return m.opts.Interval > 0 && uint64(height)%m.opts.Interval == 0
 }
 
