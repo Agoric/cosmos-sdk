@@ -31,7 +31,7 @@ func ParseInfo(infoStr string) (*Info, error) {
 	}
 
 	// If it's a url, download it and treat the result as the real info.
-	if _, err := neturl.Parse(infoStr); err == nil {
+	if _, err := neturl.ParseRequestURI(infoStr); err == nil {
 		infoStr, err = DownloadURLWithChecksum(infoStr)
 		if err != nil {
 			return nil, err
