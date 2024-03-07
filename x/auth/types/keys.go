@@ -12,6 +12,7 @@ const (
 	StoreKey = "acc"
 
 	// FeeCollectorName the root string for the fee collector account address
+	// Agoric: maintain compatibility with Agoric/agoric-sdk/golang/cosmos/x/vbank/types.ReservePoolName
 	FeeCollectorName = "vbank/reserve"
 
 	// QuerierRoute is the querier route for auth
