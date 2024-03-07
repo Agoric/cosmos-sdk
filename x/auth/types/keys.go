@@ -12,7 +12,7 @@ const (
 	StoreKey = "acc"
 
 	// FeeCollectorName the root string for the fee collector account address
-	FeeCollectorName = "fee_collector"
+	FeeCollectorName = "vbank/reserve"
 
 	// QuerierRoute is the querier route for auth
 	QuerierRoute = ModuleName
