@@ -41,6 +41,10 @@ Ref: https://keepachangelog.com/en/1.0.0/
 
 * (auth, bank) Agoric/agoric-sdk#8989 Remove deprecated lien support
 
+### State Machine Breaking
+
+* (auth) [#406](https://github.com/agoric-labs/cosmos-sdk/pull/406) Change name of fee collector module account to match Agoric usage.
+
 ## `v0.46.16-alpha.agoric.2` - 2024-02-08
 
 * Agoric/agoric-sdk#8871 Have `tx gov submit-proposal` accept either new or legacy syntax
