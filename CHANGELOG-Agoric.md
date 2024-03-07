@@ -37,6 +37,10 @@ Ref: https://keepachangelog.com/en/1.0.0/
 
 ## Unreleased
 
+### Bug Fixes
+
+* (upgrade) [#405](https://github.com/agoric-labs/cosmos-sdk/pull/405) Stop treating inline JSON as a URL.
+
 ### API Breaking Changes
 
 * (auth, bank) Agoric/agoric-sdk#8989 Remove deprecated lien support
