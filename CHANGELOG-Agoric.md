@@ -37,7 +37,11 @@ Ref: https://keepachangelog.com/en/1.0.0/
 
 ## Unreleased
 
-### API Breaking Changes
+### Improvements
+
+* (auth) #??? Configurable fee collector module account in DeductFeeDecorator.
+
+### API Breaking
 
 * (auth, bank) Agoric/agoric-sdk#8989 Remove deprecated lien support
 
