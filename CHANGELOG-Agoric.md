@@ -39,7 +39,7 @@ Ref: https://keepachangelog.com/en/1.0.0/
 
 ### Improvements
 
-* (auth) #??? Configurable fee collector module account in DeductFeeDecorator.
+* (auth) [#407](https://github.com/agoric-labs/cosmos-sdk/pull/407) Configurable fee collector module account in DeductFeeDecorator.
 
 ### API Breaking
 
