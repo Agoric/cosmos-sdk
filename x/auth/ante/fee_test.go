@@ -167,7 +167,7 @@ func (s *AnteTestSuite) TestDeductFees_WithName() {
 	tx, err := s.CreateTestTx(privs, accNums, accSeqs, s.ctx.ChainID())
 	s.Require().NoError(err)
 
-	// Set account with sufficient funds
+	// Set transacting account with sufficient funds
 	acc := s.app.AccountKeeper.NewAccountWithAddress(s.ctx, addr1)
 	s.app.AccountKeeper.SetAccount(s.ctx, acc)
 	coins := sdk.NewCoins(sdk.NewCoin("atom", sdk.NewInt(200)))
@@ -181,13 +181,14 @@ func (s *AnteTestSuite) TestDeductFees_WithName() {
 	s.Require().True(s.app.BankKeeper.GetAllBalances(s.ctx, feeCollectorAcc.GetAddress()).Empty())
 	altBalance := s.app.BankKeeper.GetAllBalances(s.ctx, altCollectorAcc.GetAddress())
 
+	// Run the transaction through a handler chain that deducts fees into altCollectorAcc.
 	dfd := ante.NewDeductFeeDecoratorWithName(s.app.AccountKeeper, s.app.BankKeeper, nil, nil, altCollectorName)
 	antehandler := sdk.ChainAnteDecorators(dfd)
-
 	_, err = antehandler(s.ctx, tx, false)
 	s.Require().NoError(err)
 
 	s.Require().True(s.app.BankKeeper.GetAllBalances(s.ctx, feeCollectorAcc.GetAddress()).Empty())
 	newAltBalance := s.app.BankKeeper.GetAllBalances(s.ctx, altCollectorAcc.GetAddress())
 	s.Require().True(newAltBalance.IsAllGTE(altBalance))
+	s.Require().False(newAltBalance.IsEqual(altBalance))
 }

@@ -28,7 +28,7 @@ func NewDeductFeeDecorator(ak AccountKeeper, bk types.BankKeeper, fk FeegrantKee
 	return NewDeductFeeDecoratorWithName(ak, bk, fk, tfc, types.FeeCollectorName)
 }
 
-// NewDeductFeeDecorator returns a DeductFeeDecorator using a custom fee collector module account.
+// NewDeductFeeDecoratorWithName returns a DeductFeeDecorator using a custom fee collector module account.
 // Agoric note: for collecting fees in the reserve account.
 func NewDeductFeeDecoratorWithName(ak AccountKeeper, bk types.BankKeeper, fk FeegrantKeeper, tfc TxFeeChecker, feeCollectorName string) DeductFeeDecorator {
 	if tfc == nil {
