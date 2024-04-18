@@ -84,12 +84,6 @@ const (
 	flagGRPCWebAddress = "grpc-web.address"
 )
 
-// [AGORIC] Valid values for FlagAbciClientType
-const (
-	abciClientTypeCommitting = "committing"
-	abciClientTypeLocal      = "local"
-)
-
 // StartCmd runs the service passed in, either stand-alone or in-process with
 // Tendermint.
 func StartCmd(appCreator types.AppCreator, defaultNodeHome string) *cobra.Command {
@@ -202,7 +196,7 @@ is performed. Note, when enabled, gRPC will also be automatically enabled.
 	cmd.Flags().Uint32(FlagStateSyncSnapshotKeepRecent, 2, "State sync snapshot to keep")
 
 	cmd.Flags().Bool(FlagDisableIAVLFastNode, false, "Disable fast node for IAVL tree")
-	cmd.Flags().String(FlagAbciClientType, abciClientTypeCommitting, fmt.Sprintf(`Type of ABCI client ("%s" or "%s")`, abciClientTypeCommitting, abciClientTypeLocal))
+	cmd.Flags().String(FlagAbciClientType, serverconfig.DefaultABCIClientType, fmt.Sprintf(`Type of ABCI client ("%s" or "%s")`, serverconfig.AbciClientTypeCommitting, serverconfig.AbciClientTypeLocal))
 
 	// add support for all Tendermint-specific command line options
 	tcmd.AddNodeFlags(cmd)
@@ -524,9 +518,9 @@ func startInProcess(ctx *Context, clientCtx client.Context, appCreator types.App
 // [AGORIC] Allows us to disable committingClient.
 func getAbciClientCreator(abciClientType string) (abciClientCreator, error) {
 	switch abciClientType {
-	case abciClientTypeCommitting:
+	case serverconfig.AbciClientTypeCommitting:
 		return proxy.NewCommittingClientCreator, nil
-	case abciClientTypeLocal:
+	case serverconfig.AbciClientTypeLocal:
 		return proxy.NewLocalClientCreator, nil
 	}
 	return nil, fmt.Errorf(`unknown ABCI client type "%s"`, abciClientType)
