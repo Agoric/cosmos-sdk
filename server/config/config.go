@@ -301,7 +301,7 @@ func DefaultConfig() *Config {
 			IAVLCacheSize:       781250, // 50 MB
 			IAVLDisableFastNode: false,
 			IAVLLazyLoading:     false,
-			ABCIClientType:      "committing", // [AGORIC]
+			ABCIClientType:      DefaultABCIClientType, // [AGORIC]
 			AppDBBackend:        "",
 		},
 		Telemetry: telemetry.Config{
