@@ -5,7 +5,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/cosmos/cosmos-sdk/codec/types"
+	gogoprotoany "github.com/cosmos/gogoproto/types/any"
+
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	sdktx "github.com/cosmos/cosmos-sdk/types/tx"
 )
@@ -23,13 +24,18 @@ const (
 )
 
 // NewProposal creates a new Proposal instance
-func NewProposal(messages []sdk.Msg, id uint64, metadata string, submitTime, depositEndTime time.Time) (Proposal, error) {
+func NewProposal(messages []sdk.Msg, id uint64, submitTime, depositEndTime time.Time, metadata, title, summary, proposer string, proposalType ProposalType) (Proposal, error) {
 	msgs, err := sdktx.SetMsgs(messages)
 	if err != nil {
 		return Proposal{}, err
 	}
 
 	tally := EmptyTallyResult()
+
+	// undefined proposal type defaults to standard
+	if proposalType == ProposalType_PROPOSAL_TYPE_UNSPECIFIED {
+		proposalType = ProposalType_PROPOSAL_TYPE_STANDARD
+	}
 
 	p := Proposal{
 		Id:               id,
@@ -39,6 +45,15 @@ func NewProposal(messages []sdk.Msg, id uint64, metadata string, submitTime, dep
 		FinalTallyResult: &tally,
 		SubmitTime:       &submitTime,
 		DepositEndTime:   &depositEndTime,
+		Title:            title,
+		Summary:          summary,
+		Proposer:         proposer,
+		ProposalType:     proposalType,
+	}
+
+	// expedited field is deprecated but we want to keep setting it for backwards compatibility
+	if proposalType == ProposalType_PROPOSAL_TYPE_EXPEDITED {
+		p.Expedited = true
 	}
 
 	return p, nil
@@ -49,15 +64,25 @@ func (p Proposal) GetMsgs() ([]sdk.Msg, error) {
 	return sdktx.GetMsgs(p.Messages, "sdk.MsgProposal")
 }
 
+// GetMinDepositFromParams returns min expedited deposit from the gov params if
+// the proposal is expedited. Otherwise, returns the regular min deposit from
+// gov params.
+func (p Proposal) GetMinDepositFromParams(params Params) sdk.Coins {
+	if p.ProposalType == ProposalType_PROPOSAL_TYPE_EXPEDITED {
+		return params.ExpeditedMinDeposit
+	}
+	return params.MinDeposit
+}
+
 // UnpackInterfaces implements UnpackInterfacesMessage.UnpackInterfaces
-func (p Proposal) UnpackInterfaces(unpacker types.AnyUnpacker) error {
+func (p Proposal) UnpackInterfaces(unpacker gogoprotoany.AnyUnpacker) error {
 	return sdktx.UnpackInterfaces(unpacker, p.Messages)
 }
 
 // Proposals is an array of proposal
 type Proposals []*Proposal
 
-var _ types.UnpackInterfacesMessage = Proposals{}
+var _ gogoprotoany.UnpackInterfacesMessage = Proposals{}
 
 // String implements stringer interface
 func (p Proposals) String() string {
@@ -70,7 +95,7 @@ func (p Proposals) String() string {
 }
 
 // UnpackInterfaces implements UnpackInterfacesMessage.UnpackInterfaces
-func (p Proposals) UnpackInterfaces(unpacker types.AnyUnpacker) error {
+func (p Proposals) UnpackInterfaces(unpacker gogoprotoany.AnyUnpacker) error {
 	for _, x := range p {
 		err := x.UnpackInterfaces(unpacker)
 		if err != nil {
@@ -94,26 +119,14 @@ func ProposalStatusFromString(str string) (ProposalStatus, error) {
 	return ProposalStatus(num), nil
 }
 
-// Marshal needed for protobuf compatibility
-func (status ProposalStatus) Marshal() ([]byte, error) {
-	return []byte{byte(status)}, nil
-}
-
-// Unmarshal needed for protobuf compatibility
-func (status *ProposalStatus) Unmarshal(data []byte) error {
-	*status = ProposalStatus(data[0])
-	return nil
-}
-
 // Format implements the fmt.Formatter interface.
-// nolint: errcheck
 func (status ProposalStatus) Format(s fmt.State, verb rune) {
 	switch verb {
 	case 's':
-		s.Write([]byte(status.String()))
+		_, _ = s.Write([]byte(status.String()))
 	default:
 		// TODO: Do this conversion more directly
-		s.Write([]byte(fmt.Sprintf("%v", byte(status))))
+		_, _ = s.Write([]byte(fmt.Sprintf("%v", byte(status))))
 	}
 }
 

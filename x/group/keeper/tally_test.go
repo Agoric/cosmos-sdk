@@ -4,21 +4,19 @@ import (
 	"context"
 	"time"
 
+	banktypes "cosmossdk.io/x/bank/types"
+	"cosmossdk.io/x/group"
+
 	sdk "github.com/cosmos/cosmos-sdk/types"
-	banktypes "github.com/cosmos/cosmos-sdk/x/bank/types"
-	"github.com/cosmos/cosmos-sdk/x/group"
 )
 
 func (s *TestSuite) TestTally() {
-	addrs := s.addrs
-	addr2 := addrs[1]
-
 	msgSend1 := &banktypes.MsgSend{
-		FromAddress: s.groupPolicyAddr.String(),
-		ToAddress:   addr2.String(),
+		FromAddress: s.groupPolicyStrAddr,
+		ToAddress:   s.addrsStr[1],
 		Amount:      sdk.Coins{sdk.NewInt64Coin("test", 100)},
 	}
-	proposers := []string{addr2.String()}
+	proposers := []string{s.addrsStr[1]}
 
 	specs := map[string]struct {
 		srcBlockTime   time.Time
@@ -42,14 +40,14 @@ func (s *TestSuite) TestTally() {
 		"withdrawn proposal": {
 			setupProposal: func(ctx context.Context) uint64 {
 				msgs := []sdk.Msg{msgSend1}
-				proposalId := submitProposal(ctx, s, msgs, proposers)
-				_, err := s.app.GroupKeeper.WithdrawProposal(ctx, &group.MsgWithdrawProposal{
-					ProposalId: proposalId,
+				proposalID := submitProposal(ctx, s, msgs, proposers)
+				_, err := s.groupKeeper.WithdrawProposal(ctx, &group.MsgWithdrawProposal{
+					ProposalId: proposalID,
 					Address:    proposers[0],
 				})
 				s.Require().NoError(err)
 
-				return proposalId
+				return proposalID
 			},
 			expErr: true,
 		},
@@ -68,17 +66,14 @@ func (s *TestSuite) TestTally() {
 	}
 
 	for msg, spec := range specs {
-		spec := spec
 		s.Run(msg, func() {
 			sdkCtx, _ := s.sdkCtx.CacheContext()
-			ctx := sdk.WrapSDKContext(sdkCtx)
-
-			pId := spec.setupProposal(ctx)
+			pID := spec.setupProposal(sdkCtx)
 			req := &group.QueryTallyResultRequest{
-				ProposalId: pId,
+				ProposalId: pID,
 			}
 
-			res, err := s.keeper.TallyResult(ctx, req)
+			res, err := s.groupKeeper.TallyResult(sdkCtx, req)
 			if spec.expErr {
 				s.Require().Error(err)
 			} else {

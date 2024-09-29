@@ -1,26 +1,25 @@
 package types
 
 import (
+	"context"
 	"encoding/json"
 
-	abci "github.com/tendermint/tendermint/abci/types"
+	bankexported "cosmossdk.io/x/bank/exported"
 
 	"github.com/cosmos/cosmos-sdk/codec"
 	sdk "github.com/cosmos/cosmos-sdk/types"
-	auth "github.com/cosmos/cosmos-sdk/x/auth/types"
-	bankexported "github.com/cosmos/cosmos-sdk/x/bank/exported"
+	"github.com/cosmos/cosmos-sdk/types/module"
 )
 
 // StakingKeeper defines the expected staking keeper (noalias)
 type StakingKeeper interface {
-	ApplyAndReturnValidatorSetUpdates(sdk.Context) (updates []abci.ValidatorUpdate, err error)
+	ApplyAndReturnValidatorSetUpdates(context.Context) (updates []module.ValidatorUpdate, err error)
 }
 
 // AccountKeeper defines the expected account keeper (noalias)
 type AccountKeeper interface {
-	NewAccount(sdk.Context, auth.AccountI) auth.AccountI
-	SetAccount(sdk.Context, auth.AccountI)
-	IterateAccounts(ctx sdk.Context, process func(auth.AccountI) (stop bool))
+	NewAccount(context.Context, sdk.AccountI) sdk.AccountI
+	SetAccount(context.Context, sdk.AccountI)
 }
 
 // GenesisAccountsIterator defines the expected iterating genesis accounts object (noalias)
@@ -28,11 +27,11 @@ type GenesisAccountsIterator interface {
 	IterateGenesisAccounts(
 		cdc *codec.LegacyAmino,
 		appGenesis map[string]json.RawMessage,
-		cb func(auth.AccountI) (stop bool),
+		cb func(sdk.AccountI) (stop bool),
 	)
 }
 
-// GenesisAccountsIterator defines the expected iterating genesis accounts object (noalias)
+// GenesisBalancesIterator defines the expected iterating genesis balances object (noalias)
 type GenesisBalancesIterator interface {
 	IterateGenesisBalances(
 		cdc codec.JSONCodec,

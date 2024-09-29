@@ -3,13 +3,13 @@ package mem
 import (
 	"io"
 
-	dbm "github.com/tendermint/tm-db"
-
-	pruningtypes "github.com/cosmos/cosmos-sdk/pruning/types"
-	"github.com/cosmos/cosmos-sdk/store/cachekv"
-	"github.com/cosmos/cosmos-sdk/store/dbadapter"
-	"github.com/cosmos/cosmos-sdk/store/tracekv"
-	"github.com/cosmos/cosmos-sdk/store/types"
+	corestore "cosmossdk.io/core/store"
+	coretesting "cosmossdk.io/core/testing"
+	"cosmossdk.io/store/cachekv"
+	"cosmossdk.io/store/dbadapter"
+	pruningtypes "cosmossdk.io/store/pruning/types"
+	"cosmossdk.io/store/tracekv"
+	"cosmossdk.io/store/types"
 )
 
 var (
@@ -24,10 +24,10 @@ type Store struct {
 }
 
 func NewStore() *Store {
-	return NewStoreWithDB(dbm.NewMemDB())
+	return NewStoreWithDB(coretesting.NewMemDB())
 }
 
-func NewStoreWithDB(db *dbm.MemDB) *Store { // nolint: interfacer
+func NewStoreWithDB(db corestore.KVStoreWithBatch) *Store { //nolint: interfacer // Concrete return type is fine here.
 	return &Store{Store: dbadapter.Store{DB: db}}
 }
 
@@ -58,3 +58,5 @@ func (s *Store) GetPruning() pruningtypes.PruningOptions {
 }
 
 func (s Store) LastCommitID() (id types.CommitID) { return }
+
+func (s Store) WorkingHash() (hash []byte) { return }

@@ -9,15 +9,15 @@ import (
 	"gotest.tools/v3/assert"
 	"pgregory.net/rapid"
 
-	"github.com/cosmos/cosmos-sdk/orm/encoding/encodeutil"
-	"github.com/cosmos/cosmos-sdk/orm/encoding/ormkv"
-	"github.com/cosmos/cosmos-sdk/orm/internal/testpb"
-	"github.com/cosmos/cosmos-sdk/orm/internal/testutil"
+	"cosmossdk.io/orm/encoding/encodeutil"
+	"cosmossdk.io/orm/encoding/ormkv"
+	"cosmossdk.io/orm/internal/testpb"
+	"cosmossdk.io/orm/internal/testutil"
 )
 
 func TestKeyCodec(t *testing.T) {
 	rapid.Check(t, func(t *rapid.T) {
-		key := testutil.TestKeyCodecGen(0, 5).Draw(t, "key").(testutil.TestKeyCodec)
+		key := testutil.TestKeyCodecGen(0, 5).Draw(t, "key")
 		for i := 0; i < 100; i++ {
 			keyValues := key.Draw(t, "values")
 
@@ -206,7 +206,7 @@ func TestDecodePrefixKey(t *testing.T) {
 			bz, err := cdc.EncodeKey(test.values)
 			assert.NilError(t, err)
 			values, err := cdc.DecodeKey(bytes.NewReader(bz))
-			assert.ErrorType(t, err, io.EOF)
+			assert.ErrorIs(t, err, io.EOF)
 			assert.Equal(t, 0, cdc.CompareKeys(test.values, values))
 		})
 	}

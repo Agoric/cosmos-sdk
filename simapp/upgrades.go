@@ -1,25 +1,40 @@
 package simapp
 
 import (
-	storetypes "github.com/cosmos/cosmos-sdk/store/types"
-	sdk "github.com/cosmos/cosmos-sdk/types"
-	"github.com/cosmos/cosmos-sdk/types/module"
-	"github.com/cosmos/cosmos-sdk/x/group"
-	"github.com/cosmos/cosmos-sdk/x/nft"
-	upgradetypes "github.com/cosmos/cosmos-sdk/x/upgrade/types"
+	"context"
+
+	"cosmossdk.io/core/appmodule"
+	corestore "cosmossdk.io/core/store"
+	"cosmossdk.io/x/accounts"
+	bankv2types "cosmossdk.io/x/bank/v2/types"
+	epochstypes "cosmossdk.io/x/epochs/types"
+	protocolpooltypes "cosmossdk.io/x/protocolpool/types"
+	upgradetypes "cosmossdk.io/x/upgrade/types"
+
+	authkeeper "github.com/cosmos/cosmos-sdk/x/auth/keeper"
 )
 
-// UpgradeName defines the on-chain upgrade name for the sample simap upgrade from v045 to v046.
+// UpgradeName defines the on-chain upgrade name for the sample SimApp upgrade
+// from v0.50.x to v0.51.x
 //
-// NOTE: This upgrade defines a reference implementation of what an upgrade could look like
-// when an application is migrating from Cosmos SDK version v0.45.x to v0.46.x.
-const UpgradeName = "v045-to-v046"
+// NOTE: This upgrade defines a reference implementation of what an upgrade
+// could look like when an application is migrating from Cosmos SDK version
+// v0.50.x to v0.51.x.
+const UpgradeName = "v050-to-v051"
 
 func (app SimApp) RegisterUpgradeHandlers() {
-	app.UpgradeKeeper.SetUpgradeHandler(UpgradeName,
-		func(ctx sdk.Context, plan upgradetypes.Plan, fromVM module.VersionMap) (module.VersionMap, error) {
-			return app.mm.RunMigrations(ctx, app.configurator, fromVM)
-		})
+	app.UpgradeKeeper.SetUpgradeHandler(
+		UpgradeName,
+		func(ctx context.Context, _ upgradetypes.Plan, fromVM appmodule.VersionMap) (appmodule.VersionMap, error) {
+			// sync accounts and auth module account number
+			err := authkeeper.MigrateAccountNumberUnsafe(ctx, &app.AuthKeeper)
+			if err != nil {
+				return nil, err
+			}
+
+			return app.ModuleManager.RunMigrations(ctx, app.Configurator(), fromVM)
+		},
+	)
 
 	upgradeInfo, err := app.UpgradeKeeper.ReadUpgradeInfoFromDisk()
 	if err != nil {
@@ -27,11 +42,14 @@ func (app SimApp) RegisterUpgradeHandlers() {
 	}
 
 	if upgradeInfo.Name == UpgradeName && !app.UpgradeKeeper.IsSkipHeight(upgradeInfo.Height) {
-		storeUpgrades := storetypes.StoreUpgrades{
+		storeUpgrades := corestore.StoreUpgrades{
 			Added: []string{
-				group.ModuleName,
-				nft.ModuleName,
+				accounts.StoreKey,
+				protocolpooltypes.StoreKey,
+				epochstypes.StoreKey,
+				bankv2types.ModuleName,
 			},
+			Deleted: []string{"crisis"}, // The SDK discontinued the crisis module in v0.52.0
 		}
 
 		// configure store loader that checks if version == upgradeHeight and applies store upgrades

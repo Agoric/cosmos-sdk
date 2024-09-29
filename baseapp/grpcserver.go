@@ -2,9 +2,10 @@ package baseapp
 
 import (
 	"context"
+	"fmt"
 	"strconv"
 
-	gogogrpc "github.com/gogo/protobuf/grpc"
+	gogogrpc "github.com/cosmos/gogoproto/grpc"
 	grpcmiddleware "github.com/grpc-ecosystem/go-grpc-middleware"
 	grpcrecovery "github.com/grpc-ecosystem/go-grpc-middleware/recovery"
 	"google.golang.org/grpc"
@@ -12,13 +13,13 @@ import (
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 
+	errorsmod "cosmossdk.io/errors"
+	storetypes "cosmossdk.io/store/types"
+
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	sdkerrors "github.com/cosmos/cosmos-sdk/types/errors"
 	grpctypes "github.com/cosmos/cosmos-sdk/types/grpc"
 )
-
-// GRPCQueryRouter returns the GRPCQueryRouter of a BaseApp.
-func (app *BaseApp) GRPCQueryRouter() *GRPCQueryRouter { return app.grpcQueryRouter }
 
 // RegisterGRPCServer registers gRPC services directly with the gRPC server.
 func (app *BaseApp) RegisterGRPCServer(server gogogrpc.Server) {
@@ -36,7 +37,7 @@ func (app *BaseApp) RegisterGRPCServer(server gogogrpc.Server) {
 		if heightHeaders := md.Get(grpctypes.GRPCBlockHeightHeader); len(heightHeaders) == 1 {
 			height, err = strconv.ParseInt(heightHeaders[0], 10, 64)
 			if err != nil {
-				return nil, sdkerrors.Wrapf(
+				return nil, errorsmod.Wrapf(
 					sdkerrors.ErrInvalidRequest,
 					"Baseapp.RegisterGRPCServer: invalid height header %q: %v", grpctypes.GRPCBlockHeightHeader, err)
 			}
@@ -47,7 +48,7 @@ func (app *BaseApp) RegisterGRPCServer(server gogogrpc.Server) {
 
 		// Create the sdk.Context. Passing false as 2nd arg, as we can't
 		// actually support proofs with gRPC right now.
-		sdkCtx, err := app.createQueryContext(height, false)
+		sdkCtx, err := app.CreateQueryContext(height, false)
 		if err != nil {
 			return nil, err
 		}
@@ -64,6 +65,20 @@ func (app *BaseApp) RegisterGRPCServer(server gogogrpc.Server) {
 		if err = grpc.SetHeader(grpcCtx, md); err != nil {
 			app.logger.Error("failed to set gRPC header", "err", err)
 		}
+
+		app.logger.Debug("gRPC query received of type: " + fmt.Sprintf("%#v", req))
+
+		// Catch an OutOfGasPanic caused in the query handlers
+		defer func() {
+			if r := recover(); r != nil {
+				switch rType := r.(type) {
+				case storetypes.ErrorOutOfGas:
+					err = errorsmod.Wrapf(sdkerrors.ErrOutOfGas, "Query gas limit exceeded: %v, out of gas in location: %v", sdkCtx.GasMeter().Limit(), rType.Descriptor)
+				default:
+					panic(r)
+				}
+			}
+		}()
 
 		return handler(grpcCtx, req)
 	}

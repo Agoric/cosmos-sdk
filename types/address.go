@@ -6,18 +6,16 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"strings"
 	"sync"
 	"sync/atomic"
 
 	"github.com/hashicorp/golang-lru/simplelru"
 	"sigs.k8s.io/yaml"
 
+	addresscodec "github.com/cosmos/cosmos-sdk/codec/address"
 	cryptotypes "github.com/cosmos/cosmos-sdk/crypto/types"
 	"github.com/cosmos/cosmos-sdk/internal/conv"
-	"github.com/cosmos/cosmos-sdk/types/address"
 	"github.com/cosmos/cosmos-sdk/types/bech32"
-	sdkerrors "github.com/cosmos/cosmos-sdk/types/errors"
 )
 
 const (
@@ -30,7 +28,6 @@ const (
 	//	config.SetBech32PrefixForValidator(yourBech32PrefixValAddr, yourBech32PrefixValPub)
 	//	config.SetBech32PrefixForConsensusNode(yourBech32PrefixConsAddr, yourBech32PrefixConsPub)
 	//	config.SetPurpose(yourPurpose)
-	//	config.SetCoinType(yourCoinType)
 	//	config.Seal()
 
 	// Bech32MainPrefix defines the main SDK Bech32 prefix of an account's address
@@ -73,6 +70,31 @@ const (
 	// Bech32PrefixConsPub defines the Bech32 prefix of a consensus node public key
 	Bech32PrefixConsPub = Bech32MainPrefix + PrefixValidator + PrefixConsensus + PrefixPublic
 )
+
+// GetBech32PrefixAccPub returns the Bech32 prefix of an account's public key.
+func GetBech32PrefixAccPub(mainPrefix string) string {
+	return mainPrefix + PrefixPublic
+}
+
+// GetBech32PrefixValAddr returns the Bech32 prefix of a validator's operator address.
+func GetBech32PrefixValAddr(mainPrefix string) string {
+	return mainPrefix + PrefixValidator + PrefixOperator
+}
+
+// GetBech32PrefixValPub returns the Bech32 prefix of a validator's operator public key.
+func GetBech32PrefixValPub(mainPrefix string) string {
+	return mainPrefix + PrefixValidator + PrefixOperator + PrefixPublic
+}
+
+// GetBech32PrefixConsAddr returns the Bech32 prefix of a consensus node address.
+func GetBech32PrefixConsAddr(mainPrefix string) string {
+	return mainPrefix + PrefixValidator + PrefixConsensus
+}
+
+// GetBech32PrefixConsPub returns the Bech32 prefix of a consensus node public key.
+func GetBech32PrefixConsPub(mainPrefix string) string {
+	return mainPrefix + PrefixValidator + PrefixConsensus + PrefixPublic
+}
 
 // cache variables
 var (
@@ -127,6 +149,7 @@ type Address interface {
 	Marshal() ([]byte, error)
 	MarshalJSON() ([]byte, error)
 	Bytes() []byte
+	// Deprecated: Use an address.Codec to convert addresses from and to string/bytes.
 	String() string
 	Format(s fmt.State, verb rune)
 }
@@ -156,26 +179,15 @@ func AccAddressFromHexUnsafe(address string) (addr AccAddress, err error) {
 	return AccAddress(bz), err
 }
 
-// VerifyAddressFormat verifies that the provided bytes form a valid address
-// according to the default address rules or a custom address verifier set by
-// GetConfig().SetAddressVerifier().
-// TODO make an issue to get rid of global Config
-// ref: https://github.com/cosmos/cosmos-sdk/issues/9690
-func VerifyAddressFormat(bz []byte) error {
-	verifier := GetConfig().GetAddressVerifier()
-	if verifier != nil {
-		return verifier(bz)
+// MustAccAddressFromBech32 calls AccAddressFromBech32 and panics on error.
+// Deprecated: Use an address.Codec to convert addresses from and to string/bytes.
+func MustAccAddressFromBech32(address string) AccAddress {
+	addr, err := AccAddressFromBech32(address)
+	if err != nil {
+		panic(err)
 	}
 
-	if len(bz) == 0 {
-		return sdkerrors.Wrap(sdkerrors.ErrUnknownAddress, "addresses cannot be empty")
-	}
-
-	if len(bz) > address.MaxAddrLen {
-		return sdkerrors.Wrapf(sdkerrors.ErrUnknownAddress, "address max length is %d, got %d", address.MaxAddrLen, len(bz))
-	}
-
-	return nil
+	return addr
 }
 
 // MustAccAddressFromBech32 calls AccAddressFromBech32 and panics on error.
@@ -189,24 +201,12 @@ func MustAccAddressFromBech32(address string) AccAddress {
 }
 
 // AccAddressFromBech32 creates an AccAddress from a Bech32 string.
+// Deprecated: Use an address.Codec to convert addresses from and to string/bytes.
 func AccAddressFromBech32(address string) (addr AccAddress, err error) {
-	if len(strings.TrimSpace(address)) == 0 {
-		return AccAddress{}, errors.New("empty address string is not allowed")
-	}
-
 	bech32PrefixAccAddr := GetConfig().GetBech32AccountAddrPrefix()
 
-	bz, err := GetFromBech32(address, bech32PrefixAccAddr)
-	if err != nil {
-		return nil, err
-	}
-
-	err = VerifyAddressFormat(bz)
-	if err != nil {
-		return nil, err
-	}
-
-	return AccAddress(bz), nil
+	addrCdc := addresscodec.NewBech32Codec(bech32PrefixAccAddr)
+	return addrCdc.StringToBytes(address)
 }
 
 // Returns boolean for whether two AccAddresses are Equal
@@ -294,6 +294,7 @@ func (aa AccAddress) Bytes() []byte {
 }
 
 // String implements the Stringer interface.
+// Deprecated: Use an address.Codec to convert addresses from and to string/bytes.
 func (aa AccAddress) String() string {
 	if aa.Empty() {
 		return ""
@@ -314,15 +315,15 @@ func (aa AccAddress) String() string {
 }
 
 // Format implements the fmt.Formatter interface.
-// nolint: errcheck
+
 func (aa AccAddress) Format(s fmt.State, verb rune) {
 	switch verb {
 	case 's':
-		s.Write([]byte(aa.String()))
+		_, _ = s.Write([]byte(aa.String()))
 	case 'p':
-		s.Write([]byte(fmt.Sprintf("%p", aa)))
+		_, _ = s.Write([]byte(fmt.Sprintf("%p", aa)))
 	default:
-		s.Write([]byte(fmt.Sprintf("%X", []byte(aa))))
+		_, _ = s.Write([]byte(fmt.Sprintf("%X", []byte(aa))))
 	}
 }
 
@@ -341,24 +342,23 @@ func ValAddressFromHex(address string) (addr ValAddress, err error) {
 }
 
 // ValAddressFromBech32 creates a ValAddress from a Bech32 string.
+// Deprecated: Use an address.Codec to convert addresses from and to string/bytes.
 func ValAddressFromBech32(address string) (addr ValAddress, err error) {
-	if len(strings.TrimSpace(address)) == 0 {
-		return ValAddress{}, errors.New("empty address string is not allowed")
-	}
-
 	bech32PrefixValAddr := GetConfig().GetBech32ValidatorAddrPrefix()
 
-	bz, err := GetFromBech32(address, bech32PrefixValAddr)
+	addrCdc := addresscodec.NewBech32Codec(bech32PrefixValAddr)
+	return addrCdc.StringToBytes(address)
+}
+
+// MustValAddressFromBech32 calls ValAddressFromBech32 and panics on error.
+// Deprecated: Use an address.Codec to convert addresses from and to string/bytes.
+func MustValAddressFromBech32(address string) ValAddress {
+	addr, err := ValAddressFromBech32(address)
 	if err != nil {
-		return nil, err
+		panic(err)
 	}
 
-	err = VerifyAddressFormat(bz)
-	if err != nil {
-		return nil, err
-	}
-
-	return ValAddress(bz), nil
+	return addr
 }
 
 // Returns boolean for whether two ValAddresses are Equal
@@ -370,7 +370,7 @@ func (va ValAddress) Equals(va2 Address) bool {
 	return bytes.Equal(va.Bytes(), va2.Bytes())
 }
 
-// Returns boolean for whether an AccAddress is empty
+// Returns boolean for whether an ValAddress is empty
 func (va ValAddress) Empty() bool {
 	return len(va) == 0
 }
@@ -448,6 +448,7 @@ func (va ValAddress) Bytes() []byte {
 }
 
 // String implements the Stringer interface.
+// Deprecated: Use an address.Codec to convert addresses from and to string/bytes.
 func (va ValAddress) String() string {
 	if va.Empty() {
 		return ""
@@ -468,15 +469,15 @@ func (va ValAddress) String() string {
 }
 
 // Format implements the fmt.Formatter interface.
-// nolint: errcheck
+
 func (va ValAddress) Format(s fmt.State, verb rune) {
 	switch verb {
 	case 's':
-		s.Write([]byte(va.String()))
+		_, _ = s.Write([]byte(va.String()))
 	case 'p':
-		s.Write([]byte(fmt.Sprintf("%p", va)))
+		_, _ = s.Write([]byte(fmt.Sprintf("%p", va)))
 	default:
-		s.Write([]byte(fmt.Sprintf("%X", []byte(va))))
+		_, _ = s.Write([]byte(fmt.Sprintf("%X", []byte(va))))
 	}
 }
 
@@ -489,30 +490,19 @@ func (va ValAddress) Format(s fmt.State, verb rune) {
 type ConsAddress []byte
 
 // ConsAddressFromHex creates a ConsAddress from a hex string.
+// Deprecated: use ConsensusAddressCodec from Staking keeper
 func ConsAddressFromHex(address string) (addr ConsAddress, err error) {
 	bz, err := addressBytesFromHexString(address)
 	return ConsAddress(bz), err
 }
 
 // ConsAddressFromBech32 creates a ConsAddress from a Bech32 string.
+// Deprecated: Use an address.Codec to convert addresses from and to string/bytes.
 func ConsAddressFromBech32(address string) (addr ConsAddress, err error) {
-	if len(strings.TrimSpace(address)) == 0 {
-		return ConsAddress{}, errors.New("empty address string is not allowed")
-	}
-
 	bech32PrefixConsAddr := GetConfig().GetBech32ConsensusAddrPrefix()
 
-	bz, err := GetFromBech32(address, bech32PrefixConsAddr)
-	if err != nil {
-		return nil, err
-	}
-
-	err = VerifyAddressFormat(bz)
-	if err != nil {
-		return nil, err
-	}
-
-	return ConsAddress(bz), nil
+	addrCdc := addresscodec.NewBech32Codec(bech32PrefixConsAddr)
+	return addrCdc.StringToBytes(address)
 }
 
 // get ConsAddress from pubkey
@@ -607,6 +597,7 @@ func (ca ConsAddress) Bytes() []byte {
 }
 
 // String implements the Stringer interface.
+// Deprecated: Use an address.Codec to convert addresses from and to string/bytes.
 func (ca ConsAddress) String() string {
 	if ca.Empty() {
 		return ""
@@ -627,7 +618,7 @@ func (ca ConsAddress) String() string {
 }
 
 // Bech32ifyAddressBytes returns a bech32 representation of address bytes.
-// Returns an empty sting if the byte slice is 0-length. Returns an error if the bech32 conversion
+// Returns an empty string if the byte slice is 0-length. Returns an error if the bech32 conversion
 // fails or the prefix is empty.
 func Bech32ifyAddressBytes(prefix string, bs []byte) (string, error) {
 	if len(bs) == 0 {
@@ -640,7 +631,7 @@ func Bech32ifyAddressBytes(prefix string, bs []byte) (string, error) {
 }
 
 // MustBech32ifyAddressBytes returns a bech32 representation of address bytes.
-// Returns an empty sting if the byte slice is 0-length. It panics if the bech32 conversion
+// Returns an empty string if the byte slice is 0-length. It panics if the bech32 conversion
 // fails or the prefix is empty.
 func MustBech32ifyAddressBytes(prefix string, bs []byte) string {
 	s, err := Bech32ifyAddressBytes(prefix, bs)
@@ -651,15 +642,15 @@ func MustBech32ifyAddressBytes(prefix string, bs []byte) string {
 }
 
 // Format implements the fmt.Formatter interface.
-// nolint: errcheck
+
 func (ca ConsAddress) Format(s fmt.State, verb rune) {
 	switch verb {
 	case 's':
-		s.Write([]byte(ca.String()))
+		_, _ = s.Write([]byte(ca.String()))
 	case 'p':
-		s.Write([]byte(fmt.Sprintf("%p", ca)))
+		_, _ = s.Write([]byte(fmt.Sprintf("%p", ca)))
 	default:
-		s.Write([]byte(fmt.Sprintf("%X", []byte(ca))))
+		_, _ = s.Write([]byte(fmt.Sprintf("%X", []byte(ca))))
 	}
 }
 
@@ -705,4 +696,9 @@ func cacheBech32Addr(prefix string, addr []byte, cache *simplelru.LRU, cacheKey 
 		cache.Add(cacheKey, bech32Addr)
 	}
 	return bech32Addr
+}
+
+// GetFullBIP44Path returns the BIP44Prefix.
+func GetFullBIP44Path() string {
+	return fmt.Sprintf("m/%d'/%d'/0'/0/0", Purpose, CoinType)
 }

@@ -2,10 +2,14 @@ package types
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"regexp"
 	"sort"
 	"strings"
+	"unicode"
+
+	"cosmossdk.io/math"
 )
 
 //-----------------------------------------------------------------------------
@@ -13,7 +17,7 @@ import (
 
 // NewCoin returns a new coin with a denomination and amount. It will panic if
 // the amount is negative or if the denomination is invalid.
-func NewCoin(denom string, amount Int) Coin {
+func NewCoin(denom string, amount math.Int) Coin {
 	coin := Coin{
 		Denom:  denom,
 		Amount: amount,
@@ -29,7 +33,7 @@ func NewCoin(denom string, amount Int) Coin {
 // NewInt64Coin returns a new coin with a denomination and amount. It will panic
 // if the amount is negative.
 func NewInt64Coin(denom string, amount int64) Coin {
-	return NewCoin(denom, NewInt(amount))
+	return NewCoin(denom, math.NewInt(amount))
 }
 
 // String provides a human-readable representation of a coin
@@ -42,6 +46,10 @@ func (coin Coin) String() string {
 func (coin Coin) Validate() error {
 	if err := ValidateDenom(coin.Denom); err != nil {
 		return err
+	}
+
+	if coin.Amount.IsNil() {
+		return errors.New("amount is nil")
 	}
 
 	if coin.Amount.IsNegative() {
@@ -59,6 +67,16 @@ func (coin Coin) IsValid() bool {
 // IsZero returns if this represents no money
 func (coin Coin) IsZero() bool {
 	return coin.Amount.IsZero()
+}
+
+// IsGT returns true if they are the same type and the receiver is
+// a greater value
+func (coin Coin) IsGT(other Coin) bool {
+	if coin.Denom != other.Denom {
+		panic(fmt.Sprintf("invalid coin denominations; %s, %s", coin.Denom, other.Denom))
+	}
+
+	return coin.Amount.GT(other.Amount)
 }
 
 // IsGTE returns true if they are the same type and the receiver is
@@ -92,12 +110,9 @@ func (coin Coin) IsLTE(other Coin) bool {
 }
 
 // IsEqual returns true if the two sets of Coins have the same value
+// Deprecated: Use Coin.Equal instead.
 func (coin Coin) IsEqual(other Coin) bool {
-	if coin.Denom != other.Denom {
-		panic(fmt.Sprintf("invalid coin denominations; %s, %s", coin.Denom, other.Denom))
-	}
-
-	return coin.Amount.Equal(other.Amount)
+	return coin.Equal(other)
 }
 
 // Add adds amounts of two coins with same denom. If the coins differ in denom then
@@ -111,7 +126,7 @@ func (coin Coin) Add(coinB Coin) Coin {
 }
 
 // AddAmount adds an amount to the Coin.
-func (coin Coin) AddAmount(amount Int) Coin {
+func (coin Coin) AddAmount(amount math.Int) Coin {
 	return Coin{coin.Denom, coin.Amount.Add(amount)}
 }
 
@@ -134,14 +149,14 @@ func (coin Coin) SafeSub(coinB Coin) (Coin, error) {
 
 	res := Coin{coin.Denom, coin.Amount.Sub(coinB.Amount)}
 	if res.IsNegative() {
-		return Coin{}, fmt.Errorf("negative coin amount")
+		return Coin{}, fmt.Errorf("negative coin amount: %s", res)
 	}
 
 	return res, nil
 }
 
 // SubAmount subtracts an amount from the Coin.
-func (coin Coin) SubAmount(amount Int) Coin {
+func (coin Coin) SubAmount(amount math.Int) Coin {
 	res := Coin{coin.Denom, coin.Amount.Sub(amount)}
 	if res.IsNegative() {
 		panic("negative coin amount")
@@ -247,18 +262,16 @@ func (coins Coins) Validate() error {
 		}
 
 		lowDenom := coins[0].Denom
-		seenDenoms := make(map[string]bool)
-		seenDenoms[lowDenom] = true
 
 		for _, coin := range coins[1:] {
-			if seenDenoms[coin.Denom] {
-				return fmt.Errorf("duplicate denomination %s", coin.Denom)
-			}
 			if err := ValidateDenom(coin.Denom); err != nil {
 				return err
 			}
-			if coin.Denom <= lowDenom {
+			if coin.Denom < lowDenom {
 				return fmt.Errorf("denomination %s is not sorted", coin.Denom)
+			}
+			if coin.Denom == lowDenom {
+				return fmt.Errorf("duplicate denomination %s", coin.Denom)
 			}
 			if !coin.IsPositive() {
 				return fmt.Errorf("coin %s amount is not positive", coin.Denom)
@@ -266,14 +279,14 @@ func (coins Coins) Validate() error {
 
 			// we compare each coin against the last denom
 			lowDenom = coin.Denom
-			seenDenoms[coin.Denom] = true
 		}
 
 		return nil
 	}
 }
 
-func (coins Coins) isSorted() bool {
+// IsSorted returns true when coins are sorted in ASC order by denoms.
+func (coins Coins) IsSorted() bool {
 	for i := 1; i < len(coins); i++ {
 		if coins[i-1].Denom > coins[i].Denom {
 			return false
@@ -286,6 +299,15 @@ func (coins Coins) isSorted() bool {
 // valid and unique denomination (i.e no duplicates).
 func (coins Coins) IsValid() bool {
 	return coins.Validate() == nil
+}
+
+// Denoms returns all denoms associated with a Coins object
+func (coins Coins) Denoms() []string {
+	res := make([]string, len(coins))
+	for i, coin := range coins {
+		res[i] = coin.Denom
+	}
+	return res
 }
 
 // Add adds two sets of coins.
@@ -313,29 +335,32 @@ func (coins Coins) Add(coinsB ...Coin) Coins {
 func (coins Coins) safeAdd(coinsB Coins) (coalesced Coins) {
 	// probably the best way will be to make Coins and interface and hide the structure
 	// definition (type alias)
-	if !coins.isSorted() {
+	if !coins.IsSorted() {
 		panic("Coins (self) must be sorted")
 	}
-	if !coinsB.isSorted() {
+	if !coinsB.IsSorted() {
 		panic("Wrong argument: coins must be sorted")
 	}
 
-	uniqCoins := make(map[string]Coins, len(coins)+len(coinsB))
+	uniqCoins := make(map[string]Coin, len(coins)+len(coinsB))
 	// Traverse all the coins for each of the coins and coinsB.
 	for _, cL := range []Coins{coins, coinsB} {
 		for _, c := range cL {
-			uniqCoins[c.Denom] = append(uniqCoins[c.Denom], c)
+			if uc, ok := uniqCoins[c.Denom]; ok {
+				uniqCoins[c.Denom] = uc.Add(c)
+			} else {
+				uniqCoins[c.Denom] = c
+			}
 		}
 	}
 
-	for denom, cL := range uniqCoins {
-		comboCoin := Coin{Denom: denom, Amount: NewInt(0)}
-		for _, c := range cL {
-			comboCoin = comboCoin.Add(c)
+	coalesced = make(Coins, 0, len(uniqCoins))
+	for denom, c := range uniqCoins { //#nosec
+		if c.IsZero() {
+			continue
 		}
-		if !comboCoin.IsZero() {
-			coalesced = append(coalesced, comboCoin)
-		}
+		c.Denom = denom
+		coalesced = append(coalesced, c)
 	}
 	return coalesced.Sort()
 }
@@ -389,7 +414,7 @@ func (coins Coins) SafeSub(coinsB ...Coin) (Coins, bool) {
 // {2A, 3B} * 2 = {4A, 6B}
 // {2A} * 0 panics
 // Note, if IsValid was true on Coins, IsValid stays true.
-func (coins Coins) MulInt(x Int) Coins {
+func (coins Coins) MulInt(x math.Int) Coins {
 	coins, ok := coins.SafeMulInt(x)
 	if !ok {
 		panic("multiplying by zero is an invalid operation on coins")
@@ -400,14 +425,13 @@ func (coins Coins) MulInt(x Int) Coins {
 
 // SafeMulInt performs the same arithmetic as MulInt but returns false
 // if the `multiplier` is zero because it makes IsValid return false.
-func (coins Coins) SafeMulInt(x Int) (Coins, bool) {
+func (coins Coins) SafeMulInt(x math.Int) (Coins, bool) {
 	if x.IsZero() {
 		return nil, false
 	}
 
 	res := make(Coins, len(coins))
 	for i, coin := range coins {
-		coin := coin
 		res[i] = NewCoin(coin.Denom, coin.Amount.Mul(x))
 	}
 
@@ -415,7 +439,7 @@ func (coins Coins) SafeMulInt(x Int) (Coins, bool) {
 }
 
 // QuoInt performs the scalar division of coins with a `divisor`
-// All coins are divided by x and trucated.
+// All coins are divided by x and truncated.
 // e.g.
 // {2A, 30B} / 2 = {1A, 15B}
 // {2A} / 2 = {1A}
@@ -423,7 +447,7 @@ func (coins Coins) SafeMulInt(x Int) (Coins, bool) {
 // {2A} / 0 = panics
 // Note, if IsValid was true on Coins, IsValid stays true,
 // unless the `divisor` is greater than the smallest coin amount.
-func (coins Coins) QuoInt(x Int) Coins {
+func (coins Coins) QuoInt(x math.Int) Coins {
 	coins, ok := coins.SafeQuoInt(x)
 	if !ok {
 		panic("dividing by zero is an invalid operation on coins")
@@ -434,14 +458,13 @@ func (coins Coins) QuoInt(x Int) Coins {
 
 // SafeQuoInt performs the same arithmetic as QuoInt but returns an error
 // if the division cannot be done.
-func (coins Coins) SafeQuoInt(x Int) (Coins, bool) {
+func (coins Coins) SafeQuoInt(x math.Int) (Coins, bool) {
 	if x.IsZero() {
 		return nil, false
 	}
 
 	var res Coins
 	for _, coin := range coins {
-		coin := coin
 		res = append(res, NewCoin(coin.Denom, coin.Amount.Quo(x)))
 	}
 
@@ -457,10 +480,10 @@ func (coins Coins) SafeQuoInt(x Int) (Coins, bool) {
 //	a.IsAllLTE(a.Max(b))
 //	b.IsAllLTE(a.Max(b))
 //	a.IsAllLTE(c) && b.IsAllLTE(c) == a.Max(b).IsAllLTE(c)
-//	a.Add(b...).IsEqual(a.Min(b).Add(a.Max(b)...))
+//	a.Add(b...).Equal(a.Min(b).Add(a.Max(b)...))
 //
 // E.g.
-// {1A, 3B, 2C}.Max({4A, 2B, 2C} == {4A, 3B, 2C})
+// {1A, 3B, 2C}.Max({4A, 2B, 2C}) == {4A, 3B, 2C}
 // {2A, 3B}.Max({1B, 4C}) == {2A, 3B, 4C}
 // {1A, 2B}.Max({}) == {1A, 2B}
 func (coins Coins) Max(coinsB Coins) Coins {
@@ -503,10 +526,10 @@ func (coins Coins) Max(coinsB Coins) Coins {
 //	a.Min(b).IsAllLTE(a)
 //	a.Min(b).IsAllLTE(b)
 //	c.IsAllLTE(a) && c.IsAllLTE(b) == c.IsAllLTE(a.Min(b))
-//	a.Add(b...).IsEqual(a.Min(b).Add(a.Max(b)...))
+//	a.Add(b...).Equal(a.Min(b).Add(a.Max(b)...))
 //
 // E.g.
-// {1A, 3B, 2C}.Min({4A, 2B, 2C} == {1A, 2B, 2C})
+// {1A, 3B, 2C}.Min({4A, 2B, 2C}) == {1A, 2B, 2C}
 // {2A, 3B}.Min({1B, 4C}) == {1B}
 // {1A, 2B}.Min({3C}) == empty
 //
@@ -646,8 +669,8 @@ func (coins Coins) IsZero() bool {
 	return true
 }
 
-// IsEqual returns true if the two sets of Coins have the same value
-func (coins Coins) IsEqual(coinsB Coins) bool {
+// Equal returns true if the two sets of Coins have the same value
+func (coins Coins) Equal(coinsB Coins) bool {
 	if len(coins) != len(coinsB) {
 		return false
 	}
@@ -656,10 +679,7 @@ func (coins Coins) IsEqual(coinsB Coins) bool {
 	coinsB = coinsB.Sort()
 
 	for i := 0; i < len(coins); i++ {
-		if coins[i].Denom != coinsB[i].Denom {
-			return false
-		}
-		if !coins[i].Amount.Equal(coinsB[i].Amount) {
+		if !coins[i].Equal(coinsB[i]) {
 			return false
 		}
 	}
@@ -673,18 +693,20 @@ func (coins Coins) Empty() bool {
 }
 
 // AmountOf returns the amount of a denom from coins
-func (coins Coins) AmountOf(denom string) Int {
+// CONTRACT: coins must be valid (sorted).
+func (coins Coins) AmountOf(denom string) math.Int {
 	mustValidateDenom(denom)
 	return coins.AmountOfNoDenomValidation(denom)
 }
 
 // AmountOfNoDenomValidation returns the amount of a denom from coins
 // without validating the denomination.
-func (coins Coins) AmountOfNoDenomValidation(denom string) Int {
+// CONTRACT: coins must be valid (sorted).
+func (coins Coins) AmountOfNoDenomValidation(denom string) math.Int {
 	if ok, c := coins.Find(denom); ok {
 		return c.Amount
 	}
-	return ZeroInt()
+	return math.ZeroInt()
 }
 
 // Find returns true and coin if the denom exists in coins. Otherwise it returns false
@@ -783,26 +805,15 @@ func (coins Coins) negative() Coins {
 
 // removeZeroCoins removes all zero coins from the given coin set in-place.
 func removeZeroCoins(coins Coins) Coins {
-	for i := 0; i < len(coins); i++ {
-		if coins[i].IsZero() {
-			break
-		} else if i == len(coins)-1 {
-			return coins
-		}
-	}
-
-	var result []Coin
-	if len(coins) > 0 {
-		result = make([]Coin, 0, len(coins)-1)
-	}
+	nonZeros := make([]Coin, 0, len(coins))
 
 	for _, coin := range coins {
 		if !coin.IsZero() {
-			result = append(result, coin)
+			nonZeros = append(nonZeros, coin)
 		}
 	}
 
-	return result
+	return nonZeros
 }
 
 //-----------------------------------------------------------------------------
@@ -821,34 +832,24 @@ var _ sort.Interface = Coins{}
 
 // Sort is a helper function to sort the set of coins in-place
 func (coins Coins) Sort() Coins {
-	sort.Sort(coins)
+	// sort.Sort(coins) does a costly runtime copy as part of `runtime.convTSlice`
+	// So we avoid this heap allocation if len(coins) <= 1. In the future, we should hopefully find
+	// a strategy to always avoid this.
+	if len(coins) > 1 {
+		sort.Sort(coins)
+	}
 	return coins
 }
 
-//-----------------------------------------------------------------------------
-// Parsing
-
 var (
-	// Denominations can be 3 ~ 128 characters long and support letters, followed by either
-	// a letter, a number or a separator ('/', ':', '.', '_' or '-').
-	reDnmString = `[a-zA-Z][a-zA-Z0-9/:._-]{2,127}`
-	reDecAmt    = `[[:digit:]]+(?:\.[[:digit:]]+)?|\.[[:digit:]]+`
-	reSpc       = `[[:space:]]*`
-	reDnm       *regexp.Regexp
-	reDecCoin   *regexp.Regexp
+	reDecAmt = `[[:digit:]]+(?:\.[[:digit:]]+)?|\.[[:digit:]]+`
+	reSpc    = `[[:space:]]*`
+
+	coinDenomRegex func() string
+
+	reDnm     *regexp.Regexp
+	reDecCoin *regexp.Regexp
 )
-
-func init() {
-	SetCoinDenomRegex(DefaultCoinDenomRegex)
-}
-
-// DefaultCoinDenomRegex returns the default regex string
-func DefaultCoinDenomRegex() string {
-	return reDnmString
-}
-
-// coinDenomRegex returns the current regex string and can be overwritten for custom validation
-var coinDenomRegex = DefaultCoinDenomRegex
 
 // SetCoinDenomRegex allows for coin's custom validation by overriding the regular
 // expression string used for denom validation.
@@ -861,10 +862,45 @@ func SetCoinDenomRegex(reFn func() string) {
 
 // ValidateDenom is the default validation function for Coin.Denom.
 func ValidateDenom(denom string) error {
-	if !reDnm.MatchString(denom) {
+	if reDnm == nil || reDecCoin == nil {
+		// Call the Ragel-generated function.
+		if !MatchDenom(denom) {
+			return fmt.Errorf("invalid denom: %s", denom)
+		}
+	} else if !reDnm.MatchString(denom) { // If reDnm has been initialized, use it for matching.
 		return fmt.Errorf("invalid denom: %s", denom)
 	}
+
 	return nil
+}
+
+// isValidRune checks if a given rune is a valid character for a rune.
+// It returns true if the rune is a letter, digit, '/', ':', '.', '_', or '-'.
+func isValidRune(r rune) bool {
+	return unicode.IsLetter(r) || unicode.IsDigit(r) || r == '/' || r == ':' || r == '.' || r == '_' || r == '-'
+}
+
+// MatchDenom checks if the given string is a valid denomination.
+// A valid denomination must have a length between 3 and 128 characters,
+// start with a letter, and only contain valid runes.
+func MatchDenom(s string) bool {
+	length := len(s)
+	if length < 3 || length > 128 {
+		return false
+	}
+
+	firstRune := rune(s[0])
+	if !unicode.IsLetter(firstRune) {
+		return false
+	}
+
+	for _, r := range s[1:] {
+		if !isValidRune(r) {
+			return false
+		}
+	}
+
+	return true
 }
 
 func mustValidateDenom(denom string) {
@@ -882,7 +918,8 @@ func ParseCoinNormalized(coinStr string) (coin Coin, err error) {
 		return Coin{}, err
 	}
 
-	coin, _ = NormalizeDecCoin(decCoin).TruncateDecimal()
+	coin, _ = NewDecCoinFromDec(decCoin.Denom, decCoin.Amount).TruncateDecimal()
+
 	return coin, nil
 }
 
@@ -900,4 +937,21 @@ func ParseCoinsNormalized(coinStr string) (Coins, error) {
 		return Coins{}, err
 	}
 	return NormalizeCoins(coins), nil
+}
+
+// ----------------------------------------------------------------------------
+
+// NormalizeCoins normalize and truncate a list of decimal coins
+func NormalizeCoins(coins []DecCoin) Coins {
+	if coins == nil {
+		return nil
+	}
+	result := make([]Coin, 0, len(coins))
+
+	for _, coin := range coins {
+		newCoin, _ := NewDecCoinFromDec(coin.Denom, coin.Amount).TruncateDecimal()
+		result = append(result, newCoin)
+	}
+
+	return result
 }

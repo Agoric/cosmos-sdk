@@ -50,7 +50,7 @@ core functionality or persistence.
 Balances will be stored first by the address, then by the denomination (the reverse is also possible,
 but retrieval of all balances for a single account is presumed to be more frequent):
 
-```golang
+```go
 var BalancesPrefix = []byte("balances")
 
 func (k Keeper) SetBalance(ctx Context, addr AccAddress, balance Coin) error {
@@ -74,7 +74,7 @@ This will result in the balances being indexed by the byte representation of
 
 `DelegateCoins()` and `UndelegateCoins()` will be altered to only load each individual
 account balance by denomination found in the (un)delegation amount. As a result,
-any mutations to the account balance by will made by denomination.
+any mutations to the account balance will made by denomination.
 
 `SubtractCoins()` and `AddCoins()` will be altered to read & write the balances
 directly instead of calling `GetCoins()` / `SetCoins()` (which no longer exist).

@@ -1,12 +1,13 @@
 package snapshot
 
 import (
-	servertypes "github.com/cosmos/cosmos-sdk/server/types"
 	"github.com/spf13/cobra"
+
+	servertypes "github.com/cosmos/cosmos-sdk/server/types"
 )
 
 // Cmd returns the snapshots group command
-func Cmd(appCreator servertypes.AppCreator) *cobra.Command {
+func Cmd[T servertypes.Application](appCreator servertypes.AppCreator[T]) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "snapshots",
 		Short: "Manage local snapshots",

@@ -1,11 +1,11 @@
 package types_test
 
 import (
-	"fmt"
+	"errors"
 	"runtime"
 	"testing"
 
-	"github.com/gogo/protobuf/proto"
+	"github.com/cosmos/gogoproto/proto"
 
 	"github.com/cosmos/cosmos-sdk/codec/types"
 	"github.com/cosmos/cosmos-sdk/testutil/testdata"
@@ -17,7 +17,7 @@ type errOnMarshal struct {
 
 var _ proto.Message = (*errOnMarshal)(nil)
 
-var errAlways = fmt.Errorf("always erroring")
+var errAlways = errors.New("always erroring")
 
 func (eom *errOnMarshal) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
 	return nil, errAlways

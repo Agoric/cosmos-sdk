@@ -1,45 +1,52 @@
 package feegrant_test
 
 import (
+	"context"
 	"testing"
 	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	tmproto "github.com/tendermint/tendermint/proto/tendermint/types"
 
-	"github.com/cosmos/cosmos-sdk/simapp"
+	appmodulev2 "cosmossdk.io/core/appmodule/v2"
+	corecontext "cosmossdk.io/core/context"
+	"cosmossdk.io/core/header"
+	storetypes "cosmossdk.io/store/types"
+	"cosmossdk.io/x/feegrant"
+
+	"github.com/cosmos/cosmos-sdk/testutil"
 	sdk "github.com/cosmos/cosmos-sdk/types"
-	"github.com/cosmos/cosmos-sdk/x/feegrant"
 )
 
 func TestPeriodicFeeValidAllow(t *testing.T) {
-	app := simapp.Setup(t, false)
-	ctx := app.BaseApp.NewContext(false, tmproto.Header{
-		Time: time.Now(),
-	})
+	key := storetypes.NewKVStoreKey(feegrant.StoreKey)
+	testCtx := testutil.DefaultContextWithDB(t, key, storetypes.NewTransientStoreKey("transient_test"))
+
+	ctx := testCtx.Ctx.WithHeaderInfo(header.Info{Time: time.Now()})
 
 	atom := sdk.NewCoins(sdk.NewInt64Coin("atom", 555))
 	smallAtom := sdk.NewCoins(sdk.NewInt64Coin("atom", 43))
 	leftAtom := sdk.NewCoins(sdk.NewInt64Coin("atom", 512))
 	oneAtom := sdk.NewCoins(sdk.NewInt64Coin("atom", 1))
 	eth := sdk.NewCoins(sdk.NewInt64Coin("eth", 1))
+	emptyCoins := sdk.Coins{}
 
-	now := ctx.BlockTime()
+	now := ctx.HeaderInfo().Time
 	oneHour := now.Add(1 * time.Hour)
 	twoHours := now.Add(2 * time.Hour)
 	tenMinutes := time.Duration(10) * time.Minute
 
 	cases := map[string]struct {
-		allow         feegrant.PeriodicAllowance
-		fee           sdk.Coins
-		blockTime     time.Time
-		valid         bool // all other checks are ignored if valid=false
-		accept        bool
-		remove        bool
-		remains       sdk.Coins
-		remainsPeriod sdk.Coins
-		periodReset   time.Time
+		allow             feegrant.PeriodicAllowance
+		fee               sdk.Coins
+		blockTime         time.Time
+		valid             bool // all other checks are ignored if valid=false
+		accept            bool
+		remove            bool
+		remains           sdk.Coins
+		remainsPeriod     sdk.Coins
+		periodReset       time.Time
+		updatePeriodReset bool
 	}{
 		"empty": {
 			allow: feegrant.PeriodicAllowance{},
@@ -60,11 +67,12 @@ func TestPeriodicFeeValidAllow(t *testing.T) {
 				PeriodSpendLimit: smallAtom,
 				PeriodReset:      now.Add(30 * time.Minute),
 			},
-			blockTime:   now,
-			valid:       true,
-			accept:      true,
-			remove:      false,
-			periodReset: now.Add(30 * time.Minute),
+			blockTime:     now,
+			valid:         true,
+			accept:        true,
+			remove:        false,
+			remainsPeriod: emptyCoins,
+			periodReset:   now.Add(30 * time.Minute),
 		},
 		"mismatched currencies": {
 			allow: feegrant.PeriodicAllowance{
@@ -93,7 +101,7 @@ func TestPeriodicFeeValidAllow(t *testing.T) {
 			blockTime:     now,
 			accept:        true,
 			remove:        false,
-			remainsPeriod: nil,
+			remainsPeriod: emptyCoins,
 			remains:       leftAtom,
 			periodReset:   now.Add(1 * time.Hour),
 		},
@@ -112,7 +120,7 @@ func TestPeriodicFeeValidAllow(t *testing.T) {
 			blockTime:     now.Add(1 * time.Hour),
 			accept:        true,
 			remove:        false,
-			remainsPeriod: nil,
+			remainsPeriod: emptyCoins,
 			remains:       smallAtom,
 			periodReset:   oneHour.Add(tenMinutes), // one step from last reset, not now
 		},
@@ -141,12 +149,13 @@ func TestPeriodicFeeValidAllow(t *testing.T) {
 				PeriodReset:      now,
 				PeriodSpendLimit: atom,
 			},
-			valid:       true,
-			fee:         atom,
-			blockTime:   oneHour,
-			accept:      true,
-			remove:      false,
-			periodReset: oneHour.Add(tenMinutes), // one step from last reset, not now
+			valid:         true,
+			fee:           atom,
+			blockTime:     oneHour,
+			accept:        true,
+			remove:        false,
+			remainsPeriod: emptyCoins,
+			periodReset:   oneHour.Add(tenMinutes), // one step from last reset, not now
 		},
 		"expired": {
 			allow: feegrant.PeriodicAllowance{
@@ -180,6 +189,20 @@ func TestPeriodicFeeValidAllow(t *testing.T) {
 			accept:    false,
 			remove:    true,
 		},
+		"test update PeriodReset ": {
+			allow: feegrant.PeriodicAllowance{
+				Period:           tenMinutes,
+				PeriodSpendLimit: smallAtom,
+				PeriodReset:      now.Add(30 * time.Minute),
+			},
+			blockTime:         now,
+			valid:             true,
+			accept:            true,
+			remove:            false,
+			remainsPeriod:     emptyCoins,
+			periodReset:       now.Add(10 * time.Minute),
+			updatePeriodReset: true,
+		},
 	}
 
 	for name, stc := range cases {
@@ -192,9 +215,18 @@ func TestPeriodicFeeValidAllow(t *testing.T) {
 			}
 			require.NoError(t, err)
 
-			ctx := app.BaseApp.NewContext(false, tmproto.Header{}).WithBlockTime(tc.blockTime)
+			if tc.updatePeriodReset {
+				err = tc.allow.UpdatePeriodReset(tc.blockTime)
+				require.NoError(t, err)
+			}
+
+			ctx := testCtx.Ctx.WithHeaderInfo(header.Info{Time: tc.blockTime})
 			// now try to deduct
-			remove, err := tc.allow.Accept(ctx, tc.fee, []sdk.Msg{})
+			// Set environment to ctx
+			remove, err := tc.allow.Accept(context.WithValue(ctx, corecontext.EnvironmentContextKey, appmodulev2.Environment{
+				HeaderService: mockHeaderService{},
+				GasService:    mockGasService{},
+			}), tc.fee, []sdk.Msg{})
 			if !tc.accept {
 				require.Error(t, err)
 				return

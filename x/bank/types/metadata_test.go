@@ -5,8 +5,9 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"cosmossdk.io/x/bank/types"
+
 	"github.com/cosmos/cosmos-sdk/codec"
-	"github.com/cosmos/cosmos-sdk/x/bank/types"
 )
 
 func TestMetadataValidate(t *testing.T) {
@@ -216,7 +217,6 @@ func TestMetadataValidate(t *testing.T) {
 	}
 
 	for _, tc := range testCases {
-		tc := tc
 		t.Run(tc.name, func(t *testing.T) {
 			err := tc.metadata.Validate()
 
@@ -258,7 +258,6 @@ func TestMarshalJSONMetaData(t *testing.T) {
 	}
 
 	for _, tc := range testCases {
-		tc := tc
 		t.Run(tc.name, func(t *testing.T) {
 			bz, err := cdc.MarshalJSON(tc.input)
 			require.NoError(t, err)

@@ -1,30 +1,41 @@
 package types
 
 import (
+	"context"
 	"time"
+
+	st "cosmossdk.io/api/cosmos/staking/v1beta1"
+	"cosmossdk.io/math"
 
 	cryptotypes "github.com/cosmos/cosmos-sdk/crypto/types"
 	sdk "github.com/cosmos/cosmos-sdk/types"
-	stakingtypes "github.com/cosmos/cosmos-sdk/x/staking/types"
 )
 
-type (
-	// StakingKeeper defines the staking module interface contract needed by the
-	// evidence module.
-	StakingKeeper interface {
-		ValidatorByConsAddr(sdk.Context, sdk.ConsAddress) stakingtypes.ValidatorI
-	}
+// StakingKeeper defines the staking module interface contract needed by the
+// evidence module.
+type StakingKeeper interface {
+	ValidatorByConsAddr(context.Context, sdk.ConsAddress) (sdk.ValidatorI, error)
+}
 
-	// SlashingKeeper defines the slashing module interface contract needed by the
-	// evidence module.
-	SlashingKeeper interface {
-		GetPubkey(sdk.Context, cryptotypes.Address) (cryptotypes.PubKey, error)
-		IsTombstoned(sdk.Context, sdk.ConsAddress) bool
-		HasValidatorSigningInfo(sdk.Context, sdk.ConsAddress) bool
-		Tombstone(sdk.Context, sdk.ConsAddress)
-		Slash(sdk.Context, sdk.ConsAddress, sdk.Dec, int64, int64)
-		SlashFractionDoubleSign(sdk.Context) sdk.Dec
-		Jail(sdk.Context, sdk.ConsAddress)
-		JailUntil(sdk.Context, sdk.ConsAddress, time.Time)
-	}
-)
+// SlashingKeeper defines the slashing module interface contract needed by the
+// evidence module.
+type SlashingKeeper interface {
+	GetPubkey(context.Context, cryptotypes.Address) (cryptotypes.PubKey, error)
+	IsTombstoned(context.Context, sdk.ConsAddress) bool
+	HasValidatorSigningInfo(context.Context, sdk.ConsAddress) bool
+	Tombstone(context.Context, sdk.ConsAddress) error
+	Slash(context.Context, sdk.ConsAddress, math.LegacyDec, int64, int64) error
+	SlashWithInfractionReason(context.Context, sdk.ConsAddress, math.LegacyDec, int64, int64, st.Infraction) error
+	SlashFractionDoubleSign(context.Context) (math.LegacyDec, error)
+	Jail(context.Context, sdk.ConsAddress) error
+	JailUntil(context.Context, sdk.ConsAddress, time.Time) error
+}
+
+// AccountKeeper define the account keeper interface contracted needed by the evidence module
+type AccountKeeper interface {
+	SetAccount(ctx context.Context, acc sdk.AccountI)
+}
+
+type ConsensusKeeper interface {
+	EvidenceParams(context.Context) (maxAge int64, maxAgeDuration time.Duration, maxBytes uint64, err error)
+}

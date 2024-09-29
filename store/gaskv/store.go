@@ -3,7 +3,7 @@ package gaskv
 import (
 	"io"
 
-	"github.com/cosmos/cosmos-sdk/store/types"
+	"cosmossdk.io/store/types"
 )
 
 var _ types.KVStore = &Store{}
@@ -26,12 +26,12 @@ func NewStore(parent types.KVStore, gasMeter types.GasMeter, gasConfig types.Gas
 	return kvs
 }
 
-// Implements Store.
+// GetStoreType implements Store.
 func (gs *Store) GetStoreType() types.StoreType {
 	return gs.parent.GetStoreType()
 }
 
-// Implements KVStore.
+// Get implements KVStore.
 func (gs *Store) Get(key []byte) (value []byte) {
 	gs.gasMeter.ConsumeGas(gs.gasConfig.ReadCostFlat, types.GasReadCostFlatDesc)
 	value = gs.parent.Get(key)
@@ -43,8 +43,8 @@ func (gs *Store) Get(key []byte) (value []byte) {
 	return value
 }
 
-// Implements KVStore.
-func (gs *Store) Set(key []byte, value []byte) {
+// Set implements KVStore.
+func (gs *Store) Set(key, value []byte) {
 	types.AssertValidKey(key)
 	types.AssertValidValue(value)
 	gs.gasMeter.ConsumeGas(gs.gasConfig.WriteCostFlat, types.GasWriteCostFlatDesc)
@@ -54,13 +54,13 @@ func (gs *Store) Set(key []byte, value []byte) {
 	gs.parent.Set(key, value)
 }
 
-// Implements KVStore.
+// Has implements KVStore.
 func (gs *Store) Has(key []byte) bool {
 	gs.gasMeter.ConsumeGas(gs.gasConfig.HasCost, types.GasHasDesc)
 	return gs.parent.Has(key)
 }
 
-// Implements KVStore.
+// Delete implements KVStore.
 func (gs *Store) Delete(key []byte) {
 	// charge gas to prevent certain attack vectors even though space is being freed
 	gs.gasMeter.ConsumeGas(gs.gasConfig.DeleteCost, types.GasDeleteDesc)
@@ -82,7 +82,7 @@ func (gs *Store) ReverseIterator(start, end []byte) types.Iterator {
 	return gs.iterator(start, end, false)
 }
 
-// Implements KVStore.
+// CacheWrap implements KVStore.
 func (gs *Store) CacheWrap() types.CacheWrap {
 	panic("cannot CacheWrap a GasKVStore")
 }
@@ -120,12 +120,12 @@ func newGasIterator(gasMeter types.GasMeter, gasConfig types.GasConfig, parent t
 	}
 }
 
-// Implements Iterator.
-func (gi *gasIterator) Domain() (start []byte, end []byte) {
+// Domain implements Iterator.
+func (gi *gasIterator) Domain() (start, end []byte) {
 	return gi.parent.Domain()
 }
 
-// Implements Iterator.
+// Valid implements Iterator.
 func (gi *gasIterator) Valid() bool {
 	return gi.parent.Valid()
 }
@@ -152,7 +152,7 @@ func (gi *gasIterator) Value() (value []byte) {
 	return value
 }
 
-// Implements Iterator.
+// Close implements Iterator.
 func (gi *gasIterator) Close() error {
 	return gi.parent.Close()
 }

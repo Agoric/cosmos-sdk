@@ -1,82 +1,72 @@
-//go:build norace
-// +build norace
-
 package client_test
 
 import (
 	"context"
-	"fmt"
 	"testing"
 
 	"github.com/stretchr/testify/suite"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/metadata"
 
-	"github.com/cosmos/cosmos-sdk/testutil/network"
+	"cosmossdk.io/log"
+	storetypes "cosmossdk.io/store/types"
+
+	"github.com/cosmos/cosmos-sdk/baseapp"
+	"github.com/cosmos/cosmos-sdk/codec"
+	"github.com/cosmos/cosmos-sdk/codec/testutil"
+	"github.com/cosmos/cosmos-sdk/runtime"
+	"github.com/cosmos/cosmos-sdk/testutil/integration"
 	"github.com/cosmos/cosmos-sdk/testutil/testdata"
+	"github.com/cosmos/cosmos-sdk/testutil/x/counter"
+	counterkeeper "github.com/cosmos/cosmos-sdk/testutil/x/counter/keeper"
+	countertypes "github.com/cosmos/cosmos-sdk/testutil/x/counter/types"
 	sdk "github.com/cosmos/cosmos-sdk/types"
-	grpctypes "github.com/cosmos/cosmos-sdk/types/grpc"
-	banktypes "github.com/cosmos/cosmos-sdk/x/bank/types"
+	moduletestutil "github.com/cosmos/cosmos-sdk/types/module/testutil"
 )
 
 type IntegrationTestSuite struct {
 	suite.Suite
 
-	network *network.Network
+	ctx           sdk.Context
+	cdc           codec.Codec
+	counterClient countertypes.QueryClient
+	testClient    testdata.QueryClient
 }
 
 func (s *IntegrationTestSuite) SetupSuite() {
 	s.T().Log("setting up integration test suite")
 
-	var err error
-	s.network, err = network.New(s.T(), s.T().TempDir(), network.DefaultConfig())
-	s.Require().NoError(err)
+	logger := log.NewNopLogger()
+	keys := storetypes.NewKVStoreKeys(countertypes.StoreKey)
+	cms := integration.CreateMultiStore(keys, logger)
+	s.ctx = sdk.NewContext(cms, true, logger)
+	cfg := moduletestutil.MakeTestEncodingConfig(testutil.CodecOptions{}, counter.AppModule{})
+	s.cdc = cfg.Codec
 
-	_, err = s.network.WaitForHeight(2)
-	s.Require().NoError(err)
+	queryHelper := baseapp.NewQueryServerTestHelper(s.ctx, cfg.InterfaceRegistry)
+	testdata.RegisterQueryServer(queryHelper, testdata.QueryImpl{})
+	s.testClient = testdata.NewQueryClient(queryHelper)
+
+	kvs := runtime.NewKVStoreService(keys[countertypes.StoreKey])
+	counterKeeper := counterkeeper.NewKeeper(runtime.NewEnvironment(kvs, logger))
+	countertypes.RegisterQueryServer(queryHelper, counterKeeper)
+	s.counterClient = countertypes.NewQueryClient(queryHelper)
 }
 
 func (s *IntegrationTestSuite) TearDownSuite() {
 	s.T().Log("tearing down integration test suite")
-	s.network.Cleanup()
 }
 
 func (s *IntegrationTestSuite) TestGRPCQuery() {
-	val0 := s.network.Validators[0]
-
 	// gRPC query to test service should work
-	testClient := testdata.NewQueryClient(val0.ClientCtx)
-	testRes, err := testClient.Echo(context.Background(), &testdata.EchoRequest{Message: "hello"})
+	testRes, err := s.testClient.Echo(context.Background(), &testdata.EchoRequest{Message: "hello"})
 	s.Require().NoError(err)
 	s.Require().Equal("hello", testRes.Message)
 
-	// gRPC query to bank service should work
-	denom := fmt.Sprintf("%stoken", val0.Moniker)
-	bankClient := banktypes.NewQueryClient(val0.ClientCtx)
 	var header metadata.MD
-	bankRes, err := bankClient.Balance(
-		context.Background(),
-		&banktypes.QueryBalanceRequest{Address: val0.Address.String(), Denom: denom},
-		grpc.Header(&header), // Also fetch grpc header
-	)
+	res, err := s.counterClient.GetCount(s.ctx, &countertypes.QueryGetCountRequest{}, grpc.Header(&header))
 	s.Require().NoError(err)
-	s.Require().Equal(
-		sdk.NewCoin(denom, s.network.Config.AccountTokens),
-		*bankRes.GetBalance(),
-	)
-	blockHeight := header.Get(grpctypes.GRPCBlockHeightHeader)
-	s.Require().NotEmpty(blockHeight[0]) // Should contain the block height
-
-	// Request metadata should work
-	val0.ClientCtx = val0.ClientCtx.WithHeight(1) // We set clientCtx to height 1
-	bankClient = banktypes.NewQueryClient(val0.ClientCtx)
-	bankRes, err = bankClient.Balance(
-		context.Background(),
-		&banktypes.QueryBalanceRequest{Address: val0.Address.String(), Denom: denom},
-		grpc.Header(&header),
-	)
-	blockHeight = header.Get(grpctypes.GRPCBlockHeightHeader)
-	s.Require().Equal([]string{"1"}, blockHeight)
+	s.Require().Equal(int64(0), res.TotalCount)
 }
 
 func TestIntegrationTestSuite(t *testing.T) {

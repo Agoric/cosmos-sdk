@@ -6,9 +6,8 @@ import (
 	"google.golang.org/protobuf/compiler/protogen"
 	"google.golang.org/protobuf/types/dynamicpb"
 
-	ormv1 "github.com/cosmos/cosmos-sdk/api/cosmos/orm/v1"
-
-	"github.com/cosmos/cosmos-sdk/orm/model/ormtable"
+	ormv1 "cosmossdk.io/api/cosmos/orm/v1"
+	"cosmossdk.io/orm/model/ormtable"
 )
 
 type singletonGen struct {

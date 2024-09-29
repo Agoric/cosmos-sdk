@@ -4,17 +4,17 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
-	dbm "github.com/tendermint/tm-db"
 
-	storetypes "github.com/cosmos/cosmos-sdk/store/types"
-	sdk "github.com/cosmos/cosmos-sdk/types"
+	coretesting "cosmossdk.io/core/testing"
+	storetypes "cosmossdk.io/store/types"
 )
 
 func TestStore(t *testing.T) {
-	db := dbm.NewMemDB()
+	db := coretesting.NewMemDB()
+
 	cms := NewCommitMultiStore()
 
-	key := sdk.NewKVStoreKey("test")
+	key := storetypes.NewKVStoreKey("test")
 	cms.MountStoreWithDB(key, storetypes.StoreTypeIAVL, db)
 	err := cms.LoadLatestVersion()
 	require.Nil(t, err)

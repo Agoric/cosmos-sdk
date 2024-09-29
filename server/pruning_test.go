@@ -6,7 +6,7 @@ import (
 	"github.com/spf13/viper"
 	"github.com/stretchr/testify/require"
 
-	pruningtypes "github.com/cosmos/cosmos-sdk/pruning/types"
+	pruningtypes "cosmossdk.io/store/pruning/types"
 )
 
 func TestGetPruningOptionsFromFlags(t *testing.T) {
@@ -49,8 +49,6 @@ func TestGetPruningOptionsFromFlags(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		tt := tt
-
 		t.Run(tt.name, func(j *testing.T) {
 			viper.Reset()
 			viper.SetDefault(FlagPruning, pruningtypes.PruningOptionDefault)

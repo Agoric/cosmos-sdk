@@ -1,143 +1,161 @@
 package ante
 
 import (
+	"bytes"
+	"context"
 	"fmt"
+
+	"cosmossdk.io/core/event"
+	"cosmossdk.io/core/transaction"
+	errorsmod "cosmossdk.io/errors"
 
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	sdkerrors "github.com/cosmos/cosmos-sdk/types/errors"
 	"github.com/cosmos/cosmos-sdk/x/auth/types"
 )
 
-// TxFeeChecker check if the provided fee is enough and returns the effective fee and tx priority,
-// the effective fee should be deducted later, and the priority should be returned in abci response.
-type TxFeeChecker func(ctx sdk.Context, tx sdk.Tx) (sdk.Coins, int64, error)
+// TxFeeChecker checks if the provided fee is enough and returns the effective fee and tx priority.
+// The effective fee should be deducted later, and the priority should be returned in the ABCI response.
+type TxFeeChecker func(ctx context.Context, tx transaction.Tx) (sdk.Coins, int64, error)
 
-// DeductFeeDecorator deducts fees from the first signer of the tx
-// If the first signer does not have the funds to pay for the fees, return with InsufficientFunds error
-// Call next AnteHandler if fees successfully deducted
-// CONTRACT: Tx must implement FeeTx interface to use DeductFeeDecorator
+// DeductFeeDecorator deducts fees from the fee payer. The fee payer is the fee granter (if specified) or first signer of the tx.
+// If the fee payer does not have the funds to pay for the fees, return an InsufficientFunds error.
+// Call next AnteHandler if fees are successfully deducted.
+// CONTRACT: The Tx must implement the FeeTx interface to use DeductFeeDecorator.
 type DeductFeeDecorator struct {
-	accountKeeper    AccountKeeper
-	bankKeeper       types.BankKeeper
-	feegrantKeeper   FeegrantKeeper
-	txFeeChecker     TxFeeChecker
-	feeCollectorName string
+	accountKeeper  AccountKeeper
+	bankKeeper     types.BankKeeper
+	feegrantKeeper FeegrantKeeper
+	txFeeChecker   TxFeeChecker
+	minGasPrices   sdk.DecCoins
 }
 
-func NewDeductFeeDecorator(ak AccountKeeper, bk types.BankKeeper, fk FeegrantKeeper, tfc TxFeeChecker) DeductFeeDecorator {
-	return NewDeductFeeDecoratorWithName(ak, bk, fk, tfc, types.FeeCollectorName)
-}
+func NewDeductFeeDecorator(ak AccountKeeper, bk types.BankKeeper, fk FeegrantKeeper, tfc TxFeeChecker) *DeductFeeDecorator {
+	dfd := &DeductFeeDecorator{
+		accountKeeper:  ak,
+		bankKeeper:     bk,
+		feegrantKeeper: fk,
+		txFeeChecker:   tfc,
+		minGasPrices:   sdk.NewDecCoins(),
+	}
 
-// NewDeductFeeDecoratorWithName returns a DeductFeeDecorator using a custom fee collector module account.
-// Agoric note: for collecting fees in the reserve account.
-func NewDeductFeeDecoratorWithName(ak AccountKeeper, bk types.BankKeeper, fk FeegrantKeeper, tfc TxFeeChecker, feeCollectorName string) DeductFeeDecorator {
 	if tfc == nil {
-		tfc = checkTxFeeWithValidatorMinGasPrices
+		dfd.txFeeChecker = dfd.checkTxFeeWithValidatorMinGasPrices
 	}
 
-	return DeductFeeDecorator{
-		accountKeeper:    ak,
-		bankKeeper:       bk,
-		feegrantKeeper:   fk,
-		txFeeChecker:     tfc,
-		feeCollectorName: feeCollectorName,
-	}
+	return dfd
 }
 
-func (dfd DeductFeeDecorator) AnteHandle(ctx sdk.Context, tx sdk.Tx, simulate bool, next sdk.AnteHandler) (sdk.Context, error) {
-	feeTx, ok := tx.(sdk.FeeTx)
-	if !ok {
-		return ctx, sdkerrors.Wrap(sdkerrors.ErrTxDecode, "Tx must be a FeeTx")
-	}
+// SetMinGasPrices sets the minimum-gas-prices value in the state of DeductFeeDecorator
+func (dfd *DeductFeeDecorator) SetMinGasPrices(minGasPrices sdk.DecCoins) {
+	dfd.minGasPrices = minGasPrices
+}
 
-	if !simulate && ctx.BlockHeight() > 0 && feeTx.GetGas() == 0 {
-		return ctx, sdkerrors.Wrap(sdkerrors.ErrInvalidGasLimit, "must provide positive gas")
-	}
-
-	var (
-		priority int64
-		err      error
-	)
-
-	fee := feeTx.GetFee()
-	if !simulate {
-		fee, priority, err = dfd.txFeeChecker(ctx, tx)
-		if err != nil {
-			return ctx, err
-		}
-	}
-	if err := dfd.checkDeductFee(ctx, tx, fee); err != nil {
+// AnteHandle implements an AnteHandler decorator for the DeductFeeDecorator
+func (dfd *DeductFeeDecorator) AnteHandle(ctx sdk.Context, tx sdk.Tx, _ bool, next sdk.AnteHandler) (sdk.Context, error) {
+	dfd.minGasPrices = ctx.MinGasPrices()
+	txPriority, err := dfd.innerValidateTx(ctx, tx)
+	if err != nil {
 		return ctx, err
 	}
 
-	newCtx := ctx.WithPriority(priority)
-
-	return next(newCtx, tx, simulate)
+	newCtx := ctx.WithPriority(txPriority)
+	return next(newCtx, tx, false)
 }
 
-func (dfd DeductFeeDecorator) checkDeductFee(ctx sdk.Context, sdkTx sdk.Tx, fee sdk.Coins) error {
-	feeTx, ok := sdkTx.(sdk.FeeTx)
+func (dfd *DeductFeeDecorator) innerValidateTx(ctx context.Context, tx transaction.Tx) (priority int64, err error) {
+	feeTx, ok := tx.(sdk.FeeTx)
 	if !ok {
-		return sdkerrors.Wrap(sdkerrors.ErrTxDecode, "Tx must be a FeeTx")
+		return 0, errorsmod.Wrap(sdkerrors.ErrTxDecode, "Tx must implement the FeeTx interface")
 	}
 
-	if addr := dfd.accountKeeper.GetModuleAddress(dfd.feeCollectorName); addr == nil {
-		return fmt.Errorf("fee collector module account (%s) has not been set", dfd.feeCollectorName)
+	execMode := dfd.accountKeeper.GetEnvironment().TransactionService.ExecMode(ctx)
+	headerInfo := dfd.accountKeeper.GetEnvironment().HeaderService.HeaderInfo(ctx)
+
+	if execMode != transaction.ExecModeSimulate && headerInfo.Height > 0 && feeTx.GetGas() == 0 {
+		return 0, errorsmod.Wrap(sdkerrors.ErrInvalidGasLimit, "must provide positive gas")
+	}
+
+	fee := feeTx.GetFee()
+	if execMode != transaction.ExecModeSimulate {
+		fee, priority, err = dfd.txFeeChecker(ctx, tx)
+		if err != nil {
+			return 0, err
+		}
+	}
+
+	if err := dfd.checkDeductFee(ctx, feeTx, fee); err != nil {
+		return 0, err
+	}
+
+	return priority, nil
+}
+
+// ValidateTx implements an TxValidator for DeductFeeDecorator
+// Note: This method is applicable only for transactions that implement the sdk.FeeTx interface.
+func (dfd *DeductFeeDecorator) ValidateTx(ctx context.Context, tx transaction.Tx) error {
+	_, err := dfd.innerValidateTx(ctx, tx)
+	return err
+}
+
+func (dfd *DeductFeeDecorator) checkDeductFee(ctx context.Context, feeTx sdk.FeeTx, fee sdk.Coins) error {
+	addr := dfd.accountKeeper.GetModuleAddress(types.FeeCollectorName)
+	if len(addr) == 0 {
+		return fmt.Errorf("fee collector module account (%s) has not been set", types.FeeCollectorName)
 	}
 
 	feePayer := feeTx.FeePayer()
 	feeGranter := feeTx.FeeGranter()
 	deductFeesFrom := feePayer
 
-	// if feegranter set deduct fee from feegranter account.
-	// this works with only when feegrant enabled.
+	// if feegranter set, deduct fee from feegranter account.
+	// this works only when feegrant is enabled.
 	if feeGranter != nil {
 		if dfd.feegrantKeeper == nil {
 			return sdkerrors.ErrInvalidRequest.Wrap("fee grants are not enabled")
-		} else if !feeGranter.Equals(feePayer) {
-			err := dfd.feegrantKeeper.UseGrantedFees(ctx, feeGranter, feePayer, fee, sdkTx.GetMsgs())
+		} else if !bytes.Equal(feeGranter, feePayer) {
+			err := dfd.feegrantKeeper.UseGrantedFees(ctx, feeGranter, feePayer, fee, feeTx.GetMsgs())
 			if err != nil {
-				return sdkerrors.Wrapf(err, "%s does not not allow to pay fees for %s", feeGranter, feePayer)
+				granterAddr, acErr := dfd.accountKeeper.AddressCodec().BytesToString(feeGranter)
+				if acErr != nil {
+					return errorsmod.Wrapf(err, "%s, feeGranter does not allow to pay fees", acErr.Error())
+				}
+				payerAddr, acErr := dfd.accountKeeper.AddressCodec().BytesToString(feePayer)
+				if acErr != nil {
+					return errorsmod.Wrapf(err, "%s, feeGranter does not allow to pay fees", acErr.Error())
+				}
+				return errorsmod.Wrapf(err, "%s does not allow to pay fees for %s", granterAddr, payerAddr)
 			}
 		}
-
 		deductFeesFrom = feeGranter
-	}
-
-	deductFeesFromAcc := dfd.accountKeeper.GetAccount(ctx, deductFeesFrom)
-	if deductFeesFromAcc == nil {
-		return sdkerrors.ErrUnknownAddress.Wrapf("fee payer address: %s does not exist", deductFeesFrom)
 	}
 
 	// deduct the fees
 	if !fee.IsZero() {
-		err := DeductFees(dfd.bankKeeper, ctx, deductFeesFromAcc, fee, dfd.feeCollectorName)
-		if err != nil {
+		if err := DeductFees(dfd.bankKeeper, ctx, deductFeesFrom, fee); err != nil {
 			return err
 		}
 	}
 
-	events := sdk.Events{
-		sdk.NewEvent(
-			sdk.EventTypeTx,
-			sdk.NewAttribute(sdk.AttributeKeyFee, fee.String()),
-			sdk.NewAttribute(sdk.AttributeKeyFeePayer, deductFeesFrom.String()),
-		),
+	if err := dfd.accountKeeper.GetEnvironment().EventService.EventManager(ctx).EmitKV(
+		sdk.EventTypeTx,
+		event.NewAttribute(sdk.AttributeKeyFee, fee.String()),
+		event.NewAttribute(sdk.AttributeKeyFeePayer, sdk.AccAddress(deductFeesFrom).String()),
+	); err != nil {
+		return err
 	}
-	ctx.EventManager().EmitEvents(events)
 
 	return nil
 }
 
 // DeductFees deducts fees from the given account.
-func DeductFees(bankKeeper types.BankKeeper, ctx sdk.Context, acc types.AccountI, fees sdk.Coins, feeCollectorName string) error {
+func DeductFees(bankKeeper types.BankKeeper, ctx context.Context, acc []byte, fees sdk.Coins) error {
 	if !fees.IsValid() {
-		return sdkerrors.Wrapf(sdkerrors.ErrInsufficientFee, "invalid fee amount: %s", fees)
+		return errorsmod.Wrapf(sdkerrors.ErrInsufficientFee, "invalid fee amount: %s", fees)
 	}
 
-	err := bankKeeper.SendCoinsFromAccountToModule(ctx, acc.GetAddress(), feeCollectorName, fees)
-	if err != nil {
-		return sdkerrors.Wrapf(sdkerrors.ErrInsufficientFunds, err.Error())
+	if err := bankKeeper.SendCoinsFromAccountToModule(ctx, acc, types.FeeCollectorName, fees); err != nil {
+		return fmt.Errorf("failed to deduct fees: %w", err)
 	}
 
 	return nil

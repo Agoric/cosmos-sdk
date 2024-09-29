@@ -1,16 +1,19 @@
 package keeper
 
 import (
-	sdk "github.com/cosmos/cosmos-sdk/types"
+	"context"
+
+	errorsmod "cosmossdk.io/errors"
+	"cosmossdk.io/x/group"
+	"cosmossdk.io/x/group/errors"
+	"cosmossdk.io/x/group/internal/orm"
+
 	sdkerrors "github.com/cosmos/cosmos-sdk/types/errors"
-	"github.com/cosmos/cosmos-sdk/x/group"
-	"github.com/cosmos/cosmos-sdk/x/group/errors"
-	"github.com/cosmos/cosmos-sdk/x/group/internal/orm"
 )
 
 // Tally is a function that tallies a proposal by iterating through its votes,
 // and returns the tally result without modifying the proposal or any state.
-func (k Keeper) Tally(ctx sdk.Context, p group.Proposal, groupID uint64) (group.TallyResult, error) {
+func (k Keeper) Tally(ctx context.Context, p group.Proposal, groupID uint64) (group.TallyResult, error) {
 	// If proposal has already been tallied and updated, then its status is
 	// accepted/rejected, in which case we just return the previously stored result.
 	//
@@ -20,7 +23,9 @@ func (k Keeper) Tally(ctx sdk.Context, p group.Proposal, groupID uint64) (group.
 		return p.FinalTallyResult, nil
 	}
 
-	it, err := k.voteByProposalIndex.Get(ctx.KVStore(k.key), p.Id)
+	kvStore := k.KVStoreService.OpenKVStore(ctx)
+
+	it, err := k.voteByProposalIndex.Get(kvStore, p.Id)
 	if err != nil {
 		return group.TallyResult{}, err
 	}
@@ -39,10 +44,10 @@ func (k Keeper) Tally(ctx sdk.Context, p group.Proposal, groupID uint64) (group.
 		}
 
 		var member group.GroupMember
-		err := k.groupMemberTable.GetOne(ctx.KVStore(k.key), orm.PrimaryKey(&group.GroupMember{
+		err := k.groupMemberTable.GetOne(kvStore, orm.PrimaryKey(&group.GroupMember{
 			GroupId: groupID,
 			Member:  &group.Member{Address: vote.Voter},
-		}), &member)
+		}, k.accKeeper.AddressCodec()), &member)
 
 		switch {
 		case sdkerrors.ErrNotFound.Is(err):
@@ -55,7 +60,7 @@ func (k Keeper) Tally(ctx sdk.Context, p group.Proposal, groupID uint64) (group.
 		}
 
 		if err := tallyResult.Add(vote, member.Member.Weight); err != nil {
-			return group.TallyResult{}, sdkerrors.Wrap(err, "add new vote")
+			return group.TallyResult{}, errorsmod.Wrap(err, "add new vote")
 		}
 	}
 

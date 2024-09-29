@@ -1,9 +1,9 @@
 package rootmulti
 
 import (
-	"github.com/tendermint/tendermint/crypto/merkle"
+	"github.com/cometbft/cometbft/crypto/merkle"
 
-	storetypes "github.com/cosmos/cosmos-sdk/store/types"
+	storetypes "cosmossdk.io/store/types"
 )
 
 // RequireProof returns whether proof is required for the subpath.
@@ -17,6 +17,8 @@ func RequireProof(subpath string) bool {
 
 //-----------------------------------------------------------------------------
 
+// DefaultProofRuntime returns a new ProofRuntime with default op decoders registered.
+// It registers decoders for IAVL commitment and Simple Merkle commitment proof operations.
 // XXX: This should be managed by the rootMultiStore which may want to register
 // more proof ops?
 func DefaultProofRuntime() (prt *merkle.ProofRuntime) {

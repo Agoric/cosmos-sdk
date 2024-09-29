@@ -7,13 +7,16 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
-	"github.com/tendermint/tendermint/libs/log"
-	dbm "github.com/tendermint/tm-db"
+
+	coretesting "cosmossdk.io/core/testing"
+	"cosmossdk.io/depinject"
+	"cosmossdk.io/log"
 
 	"github.com/cosmos/cosmos-sdk/baseapp"
 	"github.com/cosmos/cosmos-sdk/codec/types"
-	"github.com/cosmos/cosmos-sdk/simapp"
+	"github.com/cosmos/cosmos-sdk/runtime"
 	"github.com/cosmos/cosmos-sdk/testutil/testdata"
+	testdata_pulsar "github.com/cosmos/cosmos-sdk/testutil/testdata/testpb"
 	sdk "github.com/cosmos/cosmos-sdk/types"
 )
 
@@ -51,13 +54,62 @@ func TestGRPCQueryRouter(t *testing.T) {
 	require.Equal(t, spot, res3.HasAnimal.Animal.GetCachedValue())
 }
 
+func TestGRPCRouterHybridHandlers(t *testing.T) {
+	assertRouterBehaviour := func(helper *baseapp.QueryServiceTestHelper) {
+		// test getting the handler by name
+		handlers := helper.GRPCQueryRouter.HybridHandlerByRequestName("testpb.EchoRequest")
+		require.NotNil(t, handlers)
+		require.Len(t, handlers, 1)
+		handler := handlers[0]
+		// sending a protov2 message should work, and return a protov2 message
+		v2Resp := new(testdata_pulsar.EchoResponse)
+		err := handler(helper.Ctx, &testdata_pulsar.EchoRequest{Message: "hello"}, v2Resp)
+		require.Nil(t, err)
+		require.Equal(t, "hello", v2Resp.Message)
+		// also sending a protov1 message should work, and return a gogoproto message
+		gogoResp := new(testdata.EchoResponse)
+		err = handler(helper.Ctx, &testdata.EchoRequest{Message: "hello"}, gogoResp)
+		require.NoError(t, err)
+		require.Equal(t, "hello", gogoResp.Message)
+	}
+
+	t.Run("protov2 server", func(t *testing.T) {
+		qr := baseapp.NewGRPCQueryRouter()
+		interfaceRegistry := testdata.NewTestInterfaceRegistry()
+		qr.SetInterfaceRegistry(interfaceRegistry)
+		testdata_pulsar.RegisterQueryServer(qr, testdata_pulsar.QueryImpl{})
+		helper := &baseapp.QueryServiceTestHelper{
+			GRPCQueryRouter: qr,
+			Ctx:             sdk.Context{}.WithContext(context.Background()),
+		}
+		assertRouterBehaviour(helper)
+	})
+
+	t.Run("gogoproto server", func(t *testing.T) {
+		qr := baseapp.NewGRPCQueryRouter()
+		interfaceRegistry := testdata.NewTestInterfaceRegistry()
+		qr.SetInterfaceRegistry(interfaceRegistry)
+		testdata.RegisterQueryServer(qr, testdata.QueryImpl{})
+		helper := &baseapp.QueryServiceTestHelper{
+			GRPCQueryRouter: qr,
+			Ctx:             sdk.Context{}.WithContext(context.Background()),
+		}
+		assertRouterBehaviour(helper)
+	})
+}
+
 func TestRegisterQueryServiceTwice(t *testing.T) {
 	// Setup baseapp.
-	db := dbm.NewMemDB()
-	encCfg := simapp.MakeTestEncodingConfig()
-	app := baseapp.NewBaseApp("test", log.NewTMLogger(log.NewSyncWriter(os.Stdout)), db, encCfg.TxConfig.TxDecoder())
-	app.SetInterfaceRegistry(encCfg.InterfaceRegistry)
-	testdata.RegisterInterfaces(encCfg.InterfaceRegistry)
+	var appBuilder *runtime.AppBuilder
+	err := depinject.Inject(
+		depinject.Configs(
+			makeMinimalConfig(),
+			depinject.Supply(log.NewTestLogger(t)),
+		),
+		&appBuilder)
+	require.NoError(t, err)
+	db := coretesting.NewMemDB()
+	app := appBuilder.Build(db, nil)
 
 	// First time registering service shouldn't panic.
 	require.NotPanics(t, func() {
@@ -111,12 +163,13 @@ func TestQueryDataRaces_uniqueConnectionsToSameHandler(t *testing.T) {
 }
 
 func testQueryDataRacesSameHandler(t *testing.T, makeClientConn func(*baseapp.GRPCQueryRouter) *baseapp.QueryServiceTestHelper) {
+	t.Helper()
 	t.Parallel()
 
 	qr := baseapp.NewGRPCQueryRouter()
 	interfaceRegistry := testdata.NewTestInterfaceRegistry()
 	qr.SetInterfaceRegistry(interfaceRegistry)
-	testdata.RegisterQueryServer(qr, testdata.QueryImpl{})
+	testdata_pulsar.RegisterQueryServer(qr, testdata_pulsar.QueryImpl{})
 
 	// The goal is to invoke the router concurrently and check for any data races.
 	// 0. Run with: go test -race

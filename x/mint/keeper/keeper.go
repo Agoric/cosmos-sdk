@@ -1,102 +1,89 @@
 package keeper
 
 import (
+	"context"
+	"fmt"
+
+	"cosmossdk.io/collections"
+	"cosmossdk.io/core/appmodule"
+	"cosmossdk.io/core/event"
 	"cosmossdk.io/math"
-	"github.com/tendermint/tendermint/libs/log"
+	"cosmossdk.io/x/mint/types"
 
 	"github.com/cosmos/cosmos-sdk/codec"
-	storetypes "github.com/cosmos/cosmos-sdk/store/types"
+	"github.com/cosmos/cosmos-sdk/telemetry"
 	sdk "github.com/cosmos/cosmos-sdk/types"
-	"github.com/cosmos/cosmos-sdk/x/mint/types"
-	paramtypes "github.com/cosmos/cosmos-sdk/x/params/types"
 )
 
 // Keeper of the mint store
 type Keeper struct {
+	appmodule.Environment
+
 	cdc              codec.BinaryCodec
-	storeKey         storetypes.StoreKey
-	paramSpace       paramtypes.Subspace
-	stakingKeeper    types.StakingKeeper
 	bankKeeper       types.BankKeeper
 	feeCollectorName string
+	// the address capable of executing a MsgUpdateParams message. Typically, this
+	// should be the x/gov module account.
+	authority string
+
+	Schema collections.Schema
+	Params collections.Item[types.Params]
+	Minter collections.Item[types.Minter]
+
+	// mintFn is used to mint new coins during BeginBlock. This function is in charge of
+	// minting new coins based on arbitrary logic, previously done through InflationCalculationFn.
+	mintFn types.MintFn
 }
 
 // NewKeeper creates a new mint Keeper instance
 func NewKeeper(
-	cdc codec.BinaryCodec, key storetypes.StoreKey, paramSpace paramtypes.Subspace,
-	sk types.StakingKeeper, ak types.AccountKeeper, bk types.BankKeeper,
+	cdc codec.BinaryCodec,
+	env appmodule.Environment,
+	ak types.AccountKeeper,
+	bk types.BankKeeper,
 	feeCollectorName string,
-) Keeper {
+	authority string,
+) *Keeper {
 	// ensure mint module account is set
 	if addr := ak.GetModuleAddress(types.ModuleName); addr == nil {
-		panic("the mint module account has not been set")
+		panic(fmt.Sprintf("the x/%s module account has not been set", types.ModuleName))
 	}
 
-	// set KeyTable if it has not already been set
-	if !paramSpace.HasKeyTable() {
-		paramSpace = paramSpace.WithKeyTable(types.ParamKeyTable())
-	}
-
-	return Keeper{
+	sb := collections.NewSchemaBuilder(env.KVStoreService)
+	k := Keeper{
+		Environment:      env,
 		cdc:              cdc,
-		storeKey:         key,
-		paramSpace:       paramSpace,
-		stakingKeeper:    sk,
 		bankKeeper:       bk,
 		feeCollectorName: feeCollectorName,
-	}
-}
-
-// Logger returns a module-specific logger.
-func (k Keeper) Logger(ctx sdk.Context) log.Logger {
-	return ctx.Logger().With("module", "x/"+types.ModuleName)
-}
-
-// get the minter
-func (k Keeper) GetMinter(ctx sdk.Context) (minter types.Minter) {
-	store := ctx.KVStore(k.storeKey)
-	b := store.Get(types.MinterKey)
-	if b == nil {
-		panic("stored minter should not have been nil")
+		authority:        authority,
+		Params:           collections.NewItem(sb, types.ParamsKey, "params", codec.CollValue[types.Params](cdc)),
+		Minter:           collections.NewItem(sb, types.MinterKey, "minter", codec.CollValue[types.Minter](cdc)),
 	}
 
-	k.cdc.MustUnmarshal(b, &minter)
-	return
+	schema, err := sb.Build()
+	if err != nil {
+		panic(err)
+	}
+	k.Schema = schema
+
+	return &k
 }
 
-// set the minter
-func (k Keeper) SetMinter(ctx sdk.Context, minter types.Minter) {
-	store := ctx.KVStore(k.storeKey)
-	b := k.cdc.MustMarshal(&minter)
-	store.Set(types.MinterKey, b)
+// SetMintFn is used to mint new coins during BeginBlock. The mintFn function is in charge of
+// minting new coins based on arbitrary logic, previously done through InflationCalculationFn.
+func (k *Keeper) SetMintFn(mintFn types.MintFn) error {
+	k.mintFn = mintFn
+	return nil
 }
 
-// GetParams returns the total set of minting parameters.
-func (k Keeper) GetParams(ctx sdk.Context) (params types.Params) {
-	k.paramSpace.GetParamSet(ctx, &params)
-	return params
-}
-
-// SetParams sets the total set of minting parameters.
-func (k Keeper) SetParams(ctx sdk.Context, params types.Params) {
-	k.paramSpace.SetParamSet(ctx, &params)
-}
-
-// StakingTokenSupply implements an alias call to the underlying staking keeper's
-// StakingTokenSupply to be used in BeginBlocker.
-func (k Keeper) StakingTokenSupply(ctx sdk.Context) math.Int {
-	return k.stakingKeeper.StakingTokenSupply(ctx)
-}
-
-// BondedRatio implements an alias call to the underlying staking keeper's
-// BondedRatio to be used in BeginBlocker.
-func (k Keeper) BondedRatio(ctx sdk.Context) sdk.Dec {
-	return k.stakingKeeper.BondedRatio(ctx)
+// GetAuthority returns the x/mint module's authority.
+func (k *Keeper) GetAuthority() string {
+	return k.authority
 }
 
 // MintCoins implements an alias call to the underlying supply keeper's
 // MintCoins to be used in BeginBlocker.
-func (k Keeper) MintCoins(ctx sdk.Context, newCoins sdk.Coins) error {
+func (k *Keeper) MintCoins(ctx context.Context, newCoins sdk.Coins) error {
 	if newCoins.Empty() {
 		// skip as no coins need to be minted
 		return nil
@@ -107,6 +94,94 @@ func (k Keeper) MintCoins(ctx sdk.Context, newCoins sdk.Coins) error {
 
 // AddCollectedFees implements an alias call to the underlying supply keeper's
 // AddCollectedFees to be used in BeginBlocker.
-func (k Keeper) AddCollectedFees(ctx sdk.Context, fees sdk.Coins) error {
+func (k *Keeper) AddCollectedFees(ctx context.Context, fees sdk.Coins) error {
 	return k.bankKeeper.SendCoinsFromModuleToModule(ctx, types.ModuleName, k.feeCollectorName, fees)
+}
+
+func (k *Keeper) MintFn(ctx context.Context, minter *types.Minter, epochId string, epochNumber int64) error {
+	return k.mintFn(ctx, k.Environment, minter, epochId, epochNumber)
+}
+
+// DefaultMintFn returns a default mint function. It requires the Staking module and the mint keeper.
+// The default Mintfn has a requirement on staking as it uses bond to calculate inflation.
+func DefaultMintFn(ic types.InflationCalculationFn, staking types.StakingKeeper, k *Keeper) types.MintFn {
+	return func(ctx context.Context, env appmodule.Environment, minter *types.Minter, epochId string, epochNumber int64) error {
+		// the default mint function is called every block, so we only check if epochId is "block" which is
+		// a special value to indicate that this is not an epoch minting, but a regular block minting.
+		if epochId != "block" {
+			return nil
+		}
+
+		stakingTokenSupply, err := staking.StakingTokenSupply(ctx)
+		if err != nil {
+			return err
+		}
+
+		bondedRatio, err := staking.BondedRatio(ctx)
+		if err != nil {
+			return err
+		}
+
+		params, err := k.Params.Get(ctx)
+		if err != nil {
+			return err
+		}
+
+		minter.Inflation = ic(ctx, *minter, params, bondedRatio)
+		minter.AnnualProvisions = minter.NextAnnualProvisions(params, stakingTokenSupply)
+
+		mintedCoin := minter.BlockProvision(params)
+		mintedCoins := sdk.NewCoins(mintedCoin)
+		maxSupply := params.MaxSupply
+		totalSupply := stakingTokenSupply
+
+		// if maxSupply is not infinite, check against max_supply parameter
+		if !maxSupply.IsZero() {
+			if totalSupply.Add(mintedCoins.AmountOf(params.MintDenom)).GT(maxSupply) {
+				// calculate the difference between maxSupply and totalSupply
+				diff := maxSupply.Sub(totalSupply)
+				if diff.LTE(math.ZeroInt()) {
+					k.Environment.Logger.Info("max supply reached, no new tokens will be minted")
+					return nil
+				}
+
+				// mint the difference
+				diffCoin := sdk.NewCoin(params.MintDenom, diff)
+				diffCoins := sdk.NewCoins(diffCoin)
+
+				// mint coins
+				if err := k.MintCoins(ctx, diffCoins); err != nil {
+					return err
+				}
+				mintedCoins = diffCoins
+			}
+		}
+
+		// mint coins if maxSupply is infinite or total staking supply is less than maxSupply
+		if maxSupply.IsZero() || totalSupply.Add(mintedCoins.AmountOf(params.MintDenom)).LT(maxSupply) {
+			// mint coins
+			if err := k.MintCoins(ctx, mintedCoins); err != nil {
+				return err
+			}
+		}
+
+		// send the minted coins to the fee collector account
+		// TODO: figure out a better way to do this
+		err = k.AddCollectedFees(ctx, mintedCoins)
+		if err != nil {
+			return err
+		}
+
+		if mintedCoin.Amount.IsInt64() {
+			defer telemetry.ModuleSetGauge(types.ModuleName, float32(mintedCoin.Amount.Int64()), "minted_tokens")
+		}
+
+		return env.EventService.EventManager(ctx).EmitKV(
+			types.EventTypeMint,
+			event.NewAttribute(types.AttributeKeyBondedRatio, bondedRatio.String()),
+			event.NewAttribute(types.AttributeKeyInflation, minter.Inflation.String()),
+			event.NewAttribute(types.AttributeKeyAnnualProvisions, minter.AnnualProvisions.String()),
+			event.NewAttribute(sdk.AttributeKeyAmount, mintedCoin.Amount.String()),
+		)
+	}
 }

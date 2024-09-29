@@ -7,27 +7,23 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/gogo/protobuf/proto"
-	"github.com/tendermint/tendermint/crypto"
-	"sigs.k8s.io/yaml"
+	gogoprotoany "github.com/cosmos/gogoproto/types/any"
 
-	"github.com/cosmos/cosmos-sdk/codec"
 	codectypes "github.com/cosmos/cosmos-sdk/codec/types"
 	cryptotypes "github.com/cosmos/cosmos-sdk/crypto/types"
 	sdk "github.com/cosmos/cosmos-sdk/types"
+	"github.com/cosmos/cosmos-sdk/types/address"
 )
 
 var (
-	_ AccountI                           = (*BaseAccount)(nil)
-	_ GenesisAccount                     = (*BaseAccount)(nil)
-	_ codectypes.UnpackInterfacesMessage = (*BaseAccount)(nil)
-	_ GenesisAccount                     = (*ModuleAccount)(nil)
-	_ ModuleAccountI                     = (*ModuleAccount)(nil)
+	_ sdk.AccountI                         = (*BaseAccount)(nil)
+	_ GenesisAccount                       = (*BaseAccount)(nil)
+	_ gogoprotoany.UnpackInterfacesMessage = (*BaseAccount)(nil)
+	_ GenesisAccount                       = (*ModuleAccount)(nil)
+	_ sdk.ModuleAccountI                   = (*ModuleAccount)(nil)
 )
 
-// NewBaseAccount creates a new BaseAccount object
-//
-//nolint:interfacer
+// NewBaseAccount creates a new BaseAccount object.
 func NewBaseAccount(address sdk.AccAddress, pubKey cryptotypes.PubKey, accountNumber, sequence uint64) *BaseAccount {
 	acc := &BaseAccount{
 		Address:       address.String(),
@@ -44,7 +40,7 @@ func NewBaseAccount(address sdk.AccAddress, pubKey cryptotypes.PubKey, accountNu
 }
 
 // ProtoBaseAccount - a prototype function for BaseAccount
-func ProtoBaseAccount() AccountI {
+func ProtoBaseAccount() sdk.AccountI {
 	return &BaseAccount{}
 }
 
@@ -137,22 +133,8 @@ func (acc BaseAccount) Validate() error {
 	return nil
 }
 
-func (acc BaseAccount) String() string {
-	out, _ := acc.MarshalYAML()
-	return out.(string)
-}
-
-// MarshalYAML returns the YAML representation of an account.
-func (acc BaseAccount) MarshalYAML() (interface{}, error) {
-	bz, err := codec.MarshalYAML(codec.NewProtoCodec(codectypes.NewInterfaceRegistry()), &acc)
-	if err != nil {
-		return nil, err
-	}
-	return string(bz), err
-}
-
 // UnpackInterfaces implements UnpackInterfacesMessage.UnpackInterfaces
-func (acc BaseAccount) UnpackInterfaces(unpacker codectypes.AnyUnpacker) error {
+func (acc BaseAccount) UnpackInterfaces(unpacker gogoprotoany.AnyUnpacker) error {
 	if acc.PubKey == nil {
 		return nil
 	}
@@ -160,9 +142,20 @@ func (acc BaseAccount) UnpackInterfaces(unpacker codectypes.AnyUnpacker) error {
 	return unpacker.UnpackAny(acc.PubKey, &pubKey)
 }
 
+// NewModuleAddressOrBech32Address gets an input string and returns an AccAddress.
+// If the input is a valid address, it returns the address.
+// If the input is a module name, it returns the module address.
+func NewModuleAddressOrBech32Address(input string) sdk.AccAddress {
+	if addr, err := sdk.AccAddressFromBech32(input); err == nil {
+		return addr
+	}
+
+	return NewModuleAddress(input)
+}
+
 // NewModuleAddress creates an AccAddress from the hash of the module's name
 func NewModuleAddress(name string) sdk.AccAddress {
-	return sdk.AccAddress(crypto.AddressHash([]byte(name)))
+	return address.Module(name)
 }
 
 // NewEmptyModuleAccount creates a empty ModuleAccount from a string
@@ -216,7 +209,7 @@ func (ma ModuleAccount) GetPermissions() []string {
 
 // SetPubKey - Implements AccountI
 func (ma ModuleAccount) SetPubKey(pubKey cryptotypes.PubKey) error {
-	return fmt.Errorf("not supported for module accounts")
+	return errors.New("not supported for module accounts")
 }
 
 // Validate checks for errors on the account fields
@@ -229,7 +222,7 @@ func (ma ModuleAccount) Validate() error {
 		return errors.New("uninitialized ModuleAccount: BaseAccount is nil")
 	}
 
-	if ma.Address != sdk.AccAddress(crypto.AddressHash([]byte(ma.Name))).String() {
+	if ma.Address != sdk.AccAddress(AddressHash([]byte(ma.Name))).String() {
 		return fmt.Errorf("address %s cannot be derived from the module name '%s'", ma.Address, ma.Name)
 	}
 
@@ -243,33 +236,6 @@ type moduleAccountPretty struct {
 	Sequence      uint64         `json:"sequence"`
 	Name          string         `json:"name"`
 	Permissions   []string       `json:"permissions"`
-}
-
-func (ma ModuleAccount) String() string {
-	out, _ := ma.MarshalYAML()
-	return out.(string)
-}
-
-// MarshalYAML returns the YAML representation of a ModuleAccount.
-func (ma ModuleAccount) MarshalYAML() (interface{}, error) {
-	accAddr, err := sdk.AccAddressFromBech32(ma.Address)
-	if err != nil {
-		return nil, err
-	}
-
-	bs, err := yaml.Marshal(moduleAccountPretty{
-		Address:       accAddr,
-		PubKey:        "",
-		AccountNumber: ma.AccountNumber,
-		Sequence:      ma.Sequence,
-		Name:          ma.Name,
-		Permissions:   ma.Permissions,
-	})
-	if err != nil {
-		return nil, err
-	}
-
-	return string(bs), nil
 }
 
 // MarshalJSON returns the JSON representation of a ModuleAccount.
@@ -309,33 +275,18 @@ func (ma *ModuleAccount) UnmarshalJSON(bz []byte) error {
 // and a pubkey for authentication purposes.
 //
 // Many complex conditions can be used in the concrete struct which implements AccountI.
+//
+// Deprecated: Use `AccountI` from types package instead.
 type AccountI interface {
-	proto.Message
-
-	GetAddress() sdk.AccAddress
-	SetAddress(sdk.AccAddress) error // errors if already set.
-
-	GetPubKey() cryptotypes.PubKey // can return nil.
-	SetPubKey(cryptotypes.PubKey) error
-
-	GetAccountNumber() uint64
-	SetAccountNumber(uint64) error
-
-	GetSequence() uint64
-	SetSequence(uint64) error
-
-	// Ensure that account implements stringer
-	String() string
+	sdk.AccountI
 }
 
 // ModuleAccountI defines an account interface for modules that hold tokens in
 // an escrow.
+//
+// Deprecated: Use `ModuleAccountI` from types package instead.
 type ModuleAccountI interface {
-	AccountI
-
-	GetName() string
-	GetPermissions() []string
-	HasPermission(string) bool
+	sdk.ModuleAccountI
 }
 
 // GenesisAccounts defines a slice of GenesisAccount objects
@@ -355,7 +306,7 @@ func (ga GenesisAccounts) Contains(addr sdk.Address) bool {
 
 // GenesisAccount defines a genesis account that embeds an AccountI with validation capabilities.
 type GenesisAccount interface {
-	AccountI
+	sdk.AccountI
 
 	Validate() error
 }

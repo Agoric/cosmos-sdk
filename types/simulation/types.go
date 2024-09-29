@@ -1,24 +1,44 @@
 package simulation
 
 import (
+	"context"
 	"encoding/json"
 	"math/rand"
 	"time"
 
-	"github.com/cosmos/cosmos-sdk/baseapp"
-	"github.com/cosmos/cosmos-sdk/codec"
+	"cosmossdk.io/core/address"
+
 	sdk "github.com/cosmos/cosmos-sdk/types"
-	"github.com/cosmos/cosmos-sdk/x/auth/migrations/legacytx"
+	"github.com/cosmos/cosmos-sdk/types/kv"
 )
 
+// AppEntrypoint defines the method for delivering simulation TX to the app. This is implemented by *Baseapp
+type AppEntrypoint interface {
+	SimDeliver(_txEncoder sdk.TxEncoder, tx sdk.Tx) (sdk.GasInfo, *sdk.Result, error)
+}
+
+var _ AppEntrypoint = SimDeliverFn(nil)
+
+type (
+	AppEntrypointFn = SimDeliverFn
+	SimDeliverFn    func(_txEncoder sdk.TxEncoder, tx sdk.Tx) (sdk.GasInfo, *sdk.Result, error)
+)
+
+func (m SimDeliverFn) SimDeliver(txEncoder sdk.TxEncoder, tx sdk.Tx) (sdk.GasInfo, *sdk.Result, error) {
+	return m(txEncoder, tx)
+}
+
+// Deprecated: Use WeightedProposalMsg instead.
 type WeightedProposalContent interface {
 	AppParamsKey() string                   // key used to retrieve the value of the weight from the simulation application params
 	DefaultWeight() int                     // default weight
 	ContentSimulatorFn() ContentSimulatorFn // content simulator function
 }
 
-type ContentSimulatorFn func(r *rand.Rand, ctx sdk.Context, accs []Account) Content
+// Deprecated: Use MsgSimulatorFn instead.
+type ContentSimulatorFn func(r *rand.Rand, ctx context.Context, accs []Account) Content
 
+// Deprecated: Use MsgSimulatorFn instead.
 type Content interface {
 	GetTitle() string
 	GetDescription() string
@@ -28,9 +48,21 @@ type Content interface {
 	String() string
 }
 
+type WeightedProposalMsg interface {
+	AppParamsKey() string            // key used to retrieve the value of the weight from the simulation application params
+	DefaultWeight() int              // default weight
+	MsgSimulatorFn() MsgSimulatorFnX // msg simulator function
+}
+
+type (
+	// Deprecated: use MsgSimulatorFnX
+	MsgSimulatorFn  func(r *rand.Rand, accs []Account, cdc address.Codec) (sdk.Msg, error)
+	MsgSimulatorFnX func(ctx context.Context, r *rand.Rand, accs []Account, cdc address.Codec) (sdk.Msg, error)
+)
+
 type SimValFn func(r *rand.Rand) string
 
-type ParamChange interface {
+type LegacyParamChange interface {
 	Subspace() string
 	Key() string
 	SimValue() SimValFn
@@ -51,44 +83,41 @@ type WeightedOperation interface {
 //
 // Operations can optionally provide a list of "FutureOperations" to run later
 // These will be ran at the beginning of the corresponding block.
-type Operation func(r *rand.Rand, app *baseapp.BaseApp,
+type Operation func(r *rand.Rand, app AppEntrypoint,
 	ctx sdk.Context, accounts []Account, chainID string) (
 	OperationMsg OperationMsg, futureOps []FutureOperation, err error)
 
 // OperationMsg - structure for operation output
 type OperationMsg struct {
-	Route   string          `json:"route" yaml:"route"`     // msg route (i.e module name)
-	Name    string          `json:"name" yaml:"name"`       // operation name (msg Type or "no-operation")
-	Comment string          `json:"comment" yaml:"comment"` // additional comment
-	OK      bool            `json:"ok" yaml:"ok"`           // success
-	Msg     json.RawMessage `json:"msg" yaml:"msg"`         // JSON encoded msg
+	Route   string `json:"route" yaml:"route"`     // msg route (i.e module name)
+	Name    string `json:"name" yaml:"name"`       // operation name (msg Type or "no-operation")
+	Comment string `json:"comment" yaml:"comment"` // additional comment
+	OK      bool   `json:"ok" yaml:"ok"`           // success
 }
 
 // NewOperationMsgBasic creates a new operation message from raw input.
-func NewOperationMsgBasic(route, name, comment string, ok bool, msg []byte) OperationMsg {
+func NewOperationMsgBasic(moduleName, msgType, comment string, ok bool) OperationMsg {
 	return OperationMsg{
-		Route:   route,
-		Name:    name,
+		Route:   moduleName,
+		Name:    msgType,
 		Comment: comment,
 		OK:      ok,
-		Msg:     msg,
 	}
 }
 
 // NewOperationMsg - create a new operation message from sdk.Msg
-func NewOperationMsg(msg sdk.Msg, ok bool, comment string, cdc *codec.ProtoCodec) OperationMsg {
-	if legacyMsg, okType := msg.(legacytx.LegacyMsg); okType {
-		return NewOperationMsgBasic(legacyMsg.Route(), legacyMsg.Type(), comment, ok, legacyMsg.GetSignBytes())
+func NewOperationMsg(msg sdk.Msg, ok bool, comment string) OperationMsg {
+	msgType := sdk.MsgTypeURL(msg)
+	moduleName := sdk.GetModuleNameFromTypeURL(msgType)
+	if moduleName == "" {
+		moduleName = msgType
 	}
-
-	bz := cdc.MustMarshalJSON(msg)
-
-	return NewOperationMsgBasic(sdk.MsgTypeURL(msg), sdk.MsgTypeURL(msg), comment, ok, bz)
+	return NewOperationMsgBasic(moduleName, msgType, comment, ok)
 }
 
 // NoOpMsg - create a no-operation message
-func NoOpMsg(route, msgType, comment string) OperationMsg {
-	return NewOperationMsgBasic(route, msgType, comment, false, nil)
+func NoOpMsg(moduleName, msgType, comment string) OperationMsg {
+	return NewOperationMsgBasic(moduleName, msgType, comment, false)
 }
 
 // log entry text for this operation msg
@@ -140,7 +169,7 @@ type AppParams map[string]json.RawMessage
 // object. If it exists, it'll be decoded and returned. Otherwise, the provided
 // ParamSimulator is used to generate a random value or default value (eg: in the
 // case of operation weights where Rand is not used).
-func (sp AppParams) GetOrGenerate(_ codec.JSONCodec, key string, ptr interface{}, r *rand.Rand, ps ParamSimulator) {
+func (sp AppParams) GetOrGenerate(key string, ptr interface{}, r *rand.Rand, ps ParamSimulator) {
 	if v, ok := sp[key]; ok && v != nil {
 		err := json.Unmarshal(v, ptr)
 		if err != nil {
@@ -176,3 +205,7 @@ type Params interface {
 	LivenessTransitionMatrix() TransitionMatrix
 	BlockSizeTransitionMatrix() TransitionMatrix
 }
+
+// StoreDecoderRegistry defines each of the modules store decoders. Used for ImportExport
+// simulation.
+type StoreDecoderRegistry map[string]func(kvA, kvB kv.Pair) string

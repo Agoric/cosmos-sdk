@@ -1,48 +1,82 @@
 package rpc_test
 
 import (
-	"fmt"
+	"context"
+	"strconv"
 	"testing"
 
-	"github.com/stretchr/testify/suite"
+	abci "github.com/cometbft/cometbft/api/cometbft/abci/v1"
+	"github.com/stretchr/testify/require"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/metadata"
 
-	"github.com/cosmos/cosmos-sdk/client/rpc"
+	"github.com/cosmos/cosmos-sdk/client"
 	clitestutil "github.com/cosmos/cosmos-sdk/testutil/cli"
-	"github.com/cosmos/cosmos-sdk/testutil/network"
+	"github.com/cosmos/cosmos-sdk/testutil/testdata"
+	"github.com/cosmos/cosmos-sdk/types/address"
+	grpctypes "github.com/cosmos/cosmos-sdk/types/grpc"
 )
 
-type IntegrationTestSuite struct {
-	suite.Suite
+func TestCLIQueryConn(t *testing.T) {
+	t.Skip("data race in comet is causing this to fail")
 
-	network *network.Network
+	var header metadata.MD
+
+	testClient := testdata.NewQueryClient(client.Context{})
+	res, err := testClient.Echo(context.Background(), &testdata.EchoRequest{Message: "hello"}, grpc.Header(&header))
+	require.NoError(t, err)
+
+	blockHeight := header.Get(grpctypes.GRPCBlockHeightHeader)
+	height, err := strconv.Atoi(blockHeight[0])
+	require.NoError(t, err)
+	require.GreaterOrEqual(t, height, 1) // at least the 1st block
+	require.Equal(t, "hello", res.Message)
 }
 
-func (s *IntegrationTestSuite) SetupSuite() {
-	s.T().Log("setting up integration test suite")
+func TestQueryABCIHeight(t *testing.T) {
+	testCases := []struct {
+		name      string
+		reqHeight int64
+		ctxHeight int64
+		expHeight int64
+	}{
+		{
+			name:      "non zero request height",
+			reqHeight: 3,
+			ctxHeight: 1, // query at height 1 or 2 would cause an error
+			expHeight: 3,
+		},
+		{
+			name:      "empty request height - use context height",
+			reqHeight: 0,
+			ctxHeight: 3,
+			expHeight: 3,
+		},
+		{
+			name:      "empty request height and context height - use latest height",
+			reqHeight: 0,
+			ctxHeight: 0,
+			expHeight: 4,
+		},
+	}
 
-	var err error
-	s.network, err = network.New(s.T(), s.T().TempDir(), network.DefaultConfig())
-	s.Require().NoError(err)
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			req := abci.QueryRequest{
+				Path:   "store/bank/key",
+				Height: tc.reqHeight,
+				Data:   address.MustLengthPrefix([]byte{}),
+				Prove:  true,
+			}
 
-	s.Require().NoError(s.network.WaitForNextBlock())
-}
+			clientCtx := client.Context{}.WithHeight(tc.ctxHeight).
+				WithClient(clitestutil.NewMockCometRPC(abci.QueryResponse{
+					Height: tc.expHeight,
+				}))
 
-func (s *IntegrationTestSuite) TearDownSuite() {
-	s.T().Log("tearing down integration test suite")
-	s.network.Cleanup()
-}
-
-func (s *IntegrationTestSuite) TestStatusCommand() {
-	val0 := s.network.Validators[0]
-	cmd := rpc.StatusCommand()
-
-	out, err := clitestutil.ExecTestCLICmd(val0.ClientCtx, cmd, []string{})
-	s.Require().NoError(err)
-
-	// Make sure the output has the validator moniker.
-	s.Require().Contains(out.String(), fmt.Sprintf("\"moniker\":\"%s\"", val0.Moniker))
-}
-
-func TestIntegrationTestSuite(t *testing.T) {
-	suite.Run(t, new(IntegrationTestSuite))
+			res, err := clientCtx.QueryABCI(req)
+			require.NoError(t, err)
+			require.Equal(t, tc.expHeight, res.Height)
+		})
+	}
 }

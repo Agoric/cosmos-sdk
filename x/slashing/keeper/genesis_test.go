@@ -1,59 +1,65 @@
 package keeper_test
 
 import (
-	"testing"
 	"time"
 
-	"github.com/stretchr/testify/require"
-	tmproto "github.com/tendermint/tendermint/proto/tendermint/types"
+	"github.com/golang/mock/gomock"
 
-	"github.com/cosmos/cosmos-sdk/simapp"
+	"cosmossdk.io/x/slashing/testutil"
+	"cosmossdk.io/x/slashing/types"
+
 	sdk "github.com/cosmos/cosmos-sdk/types"
-	"github.com/cosmos/cosmos-sdk/x/slashing/testslashing"
-	"github.com/cosmos/cosmos-sdk/x/slashing/types"
 )
 
-func TestExportAndInitGenesis(t *testing.T) {
-	app := simapp.Setup(t, false)
-	ctx := app.BaseApp.NewContext(false, tmproto.Header{})
+func (s *KeeperTestSuite) TestExportAndInitGenesis() {
+	ctx, keeper := s.ctx, s.slashingKeeper
+	require := s.Require()
+	err := keeper.Params.Set(ctx, testutil.TestParams())
+	s.Require().NoError(err)
+	consAddr1 := sdk.ConsAddress(([]byte("addr1_______________")))
+	consAddr2 := sdk.ConsAddress(([]byte("addr2_______________")))
+	consStr1, err := s.stakingKeeper.ConsensusAddressCodec().BytesToString(consAddr1)
+	require.NoError(err)
+	consStr2, err := s.stakingKeeper.ConsensusAddressCodec().BytesToString(consAddr2)
+	require.NoError(err)
 
-	app.SlashingKeeper.SetParams(ctx, testslashing.TestParams())
-
-	addrDels := simapp.AddTestAddrsIncremental(app, ctx, 2, app.StakingKeeper.TokensFromConsensusPower(ctx, 200))
-
-	info1 := types.NewValidatorSigningInfo(sdk.ConsAddress(addrDels[0]), int64(4), int64(3),
+	info1 := types.NewValidatorSigningInfo(consStr1, int64(4),
 		time.Now().UTC().Add(100000000000), false, int64(10))
-	info2 := types.NewValidatorSigningInfo(sdk.ConsAddress(addrDels[1]), int64(5), int64(4),
+	info2 := types.NewValidatorSigningInfo(consStr2, int64(5),
 		time.Now().UTC().Add(10000000000), false, int64(10))
 
-	app.SlashingKeeper.SetValidatorSigningInfo(ctx, sdk.ConsAddress(addrDels[0]), info1)
-	app.SlashingKeeper.SetValidatorSigningInfo(ctx, sdk.ConsAddress(addrDels[1]), info2)
-	genesisState := app.SlashingKeeper.ExportGenesis(ctx)
+	s.Require().NoError(keeper.ValidatorSigningInfo.Set(ctx, consAddr1, info1))
+	s.Require().NoError(keeper.ValidatorSigningInfo.Set(ctx, consAddr2, info2))
+	genesisState, err := keeper.ExportGenesis(ctx)
+	require.NoError(err)
 
-	require.Equal(t, genesisState.Params, testslashing.TestParams())
-	require.Len(t, genesisState.SigningInfos, 2)
-	require.Equal(t, genesisState.SigningInfos[0].ValidatorSigningInfo, info1)
+	require.Equal(genesisState.Params, testutil.TestParams())
+	require.Len(genesisState.SigningInfos, 2)
+	require.Equal(genesisState.SigningInfos[0].ValidatorSigningInfo, info1)
 
 	// Tombstone validators after genesis shouldn't effect genesis state
-	app.SlashingKeeper.Tombstone(ctx, sdk.ConsAddress(addrDels[0]))
-	app.SlashingKeeper.Tombstone(ctx, sdk.ConsAddress(addrDels[1]))
+	err = keeper.Tombstone(ctx, consAddr1)
+	require.NoError(err)
+	err = keeper.Tombstone(ctx, consAddr2)
+	require.NoError(err)
 
-	ok := app.SlashingKeeper.IsTombstoned(ctx, sdk.ConsAddress(addrDels[0]))
-	require.True(t, ok)
+	ok := keeper.IsTombstoned(ctx, consAddr1)
+	require.True(ok)
 
-	newInfo1, ok := app.SlashingKeeper.GetValidatorSigningInfo(ctx, sdk.ConsAddress(addrDels[0]))
-	require.NotEqual(t, info1, newInfo1)
-	// Initialise genesis with genesis state before tombstone
+	newInfo1, _ := keeper.ValidatorSigningInfo.Get(ctx, consAddr1)
+	require.NotEqual(info1, newInfo1)
 
-	app.SlashingKeeper.InitGenesis(ctx, app.StakingKeeper, genesisState)
+	// Initialize genesis with genesis state before tombstone
+	s.stakingKeeper.EXPECT().IterateValidators(ctx, gomock.Any()).Return(nil)
+	err = keeper.InitGenesis(ctx, s.stakingKeeper, genesisState)
+	s.Require().NoError(err)
 
-	// Validator isTombstoned should return false as GenesisState is initialised
-	ok = app.SlashingKeeper.IsTombstoned(ctx, sdk.ConsAddress(addrDels[0]))
-	require.False(t, ok)
+	// Validator isTombstoned should return false as GenesisState is initialized
+	ok = keeper.IsTombstoned(ctx, consAddr1)
+	require.False(ok)
 
-	newInfo1, ok = app.SlashingKeeper.GetValidatorSigningInfo(ctx, sdk.ConsAddress(addrDels[0]))
-	newInfo2, ok := app.SlashingKeeper.GetValidatorSigningInfo(ctx, sdk.ConsAddress(addrDels[1]))
-	require.True(t, ok)
-	require.Equal(t, info1, newInfo1)
-	require.Equal(t, info2, newInfo2)
+	newInfo1, _ = keeper.ValidatorSigningInfo.Get(ctx, consAddr1)
+	newInfo2, _ := keeper.ValidatorSigningInfo.Get(ctx, consAddr2)
+	require.Equal(info1, newInfo1)
+	require.Equal(info2, newInfo2)
 }

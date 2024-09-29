@@ -1,44 +1,44 @@
 package authz
 
 import (
-	"github.com/cosmos/cosmos-sdk/codec"
+	"cosmossdk.io/core/registry"
+	coretransaction "cosmossdk.io/core/transaction"
+	bank "cosmossdk.io/x/bank/types"
+	staking "cosmossdk.io/x/staking/types"
+
 	"github.com/cosmos/cosmos-sdk/codec/legacy"
-	types "github.com/cosmos/cosmos-sdk/codec/types"
-	sdk "github.com/cosmos/cosmos-sdk/types"
 	"github.com/cosmos/cosmos-sdk/types/msgservice"
-	authzcodec "github.com/cosmos/cosmos-sdk/x/authz/codec"
 )
 
 // RegisterLegacyAminoCodec registers the necessary x/authz interfaces and concrete types
 // on the provided LegacyAmino codec. These types are used for Amino JSON serialization.
-func RegisterLegacyAminoCodec(cdc *codec.LegacyAmino) {
-	legacy.RegisterAminoMsg(cdc, &MsgGrant{}, "cosmos-sdk/MsgGrant")
-	legacy.RegisterAminoMsg(cdc, &MsgRevoke{}, "cosmos-sdk/MsgRevoke")
-	legacy.RegisterAminoMsg(cdc, &MsgExec{}, "cosmos-sdk/MsgExec")
+func RegisterLegacyAminoCodec(registrar registry.AminoRegistrar) {
+	legacy.RegisterAminoMsg(registrar, &MsgGrant{}, "cosmos-sdk/MsgGrant")
+	legacy.RegisterAminoMsg(registrar, &MsgRevoke{}, "cosmos-sdk/MsgRevoke")
+	legacy.RegisterAminoMsg(registrar, &MsgExec{}, "cosmos-sdk/MsgExec")
 
-	cdc.RegisterInterface((*Authorization)(nil), nil)
-	cdc.RegisterConcrete(&GenericAuthorization{}, "cosmos-sdk/GenericAuthorization", nil)
+	registrar.RegisterInterface((*Authorization)(nil), nil)
+	registrar.RegisterConcrete(&GenericAuthorization{}, "cosmos-sdk/GenericAuthorization")
 }
 
 // RegisterInterfaces registers the interfaces types with the interface registry
-func RegisterInterfaces(registry types.InterfaceRegistry) {
-	registry.RegisterImplementations((*sdk.Msg)(nil),
+func RegisterInterfaces(registrar registry.InterfaceRegistrar) {
+	registrar.RegisterImplementations((*coretransaction.Msg)(nil),
 		&MsgGrant{},
 		&MsgRevoke{},
 		&MsgExec{},
 	)
 
-	registry.RegisterInterface(
-		"cosmos.v1beta1.Authorization",
+	// since bank.SendAuthorization and staking.StakeAuthorization both implement Authorization
+	// and authz depends on x/bank and x/staking in other places, these registrations are placed here
+	// to prevent a cyclic dependency.
+	// see: https://github.com/cosmos/cosmos-sdk/pull/16509
+	registrar.RegisterInterface(
+		"cosmos.authz.v1beta1.Authorization",
 		(*Authorization)(nil),
 		&GenericAuthorization{},
+		&bank.SendAuthorization{},
+		&staking.StakeAuthorization{},
 	)
-
-	msgservice.RegisterMsgServiceDesc(registry, MsgServiceDesc())
-}
-
-func init() {
-	// Register all Amino interfaces and concrete types on the authz Amino codec so that this can later be
-	// used to properly serialize MsgGrant and MsgExec instances
-	RegisterLegacyAminoCodec(authzcodec.Amino)
+	msgservice.RegisterMsgServiceDesc(registrar, MsgServiceDesc())
 }

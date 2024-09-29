@@ -15,6 +15,7 @@
 * 2021 Feb 24: The Cosmos SDK does not use Tendermint's `PubKey` interface anymore, but its own `cryptotypes.PubKey`. Updates to reflect this.
 * 2021 May 3: Rename `clientCtx.JSONMarshaler` to `clientCtx.JSONCodec`.
 * 2021 June 10: Add `clientCtx.Codec: codec.Codec`.
+* 2024 February 5: Account creation step
 
 ## Status
 
@@ -57,7 +58,7 @@ compatibility.
 In order to facilitate signing, transactions are separated into `TxBody`,
 which will be re-used by `SignDoc` below, and `signatures`:
 
-```proto
+```protobuf
 // types/types.proto
 package cosmos_sdk.v1;
 
@@ -69,7 +70,7 @@ message Tx {
     repeated bytes signatures = 3;
 }
 
-// A variant of Tx that pins the signer's exact binary represenation of body and
+// A variant of Tx that pins the signer's exact binary representation of body and
 // auth_info. This is used for signing, broadcasting and verification. The binary
 // `serialize(tx: TxRaw)` is stored in Tendermint and the hash `sha256(serialize(tx: TxRaw))`
 // becomes the "txhash", commonly used as the transaction ID.
@@ -190,7 +191,7 @@ the wire. This has the advantages of:
 Signatures are structured using the `SignDoc` below which reuses the serialization of
 `TxBody` and `AuthInfo` and only adds the fields which are needed for signatures:
 
-```proto
+```protobuf
 // types/types.proto
 message SignDoc {
     // A protobuf serialization of a TxBody that matches the representation in TxRaw.
@@ -277,7 +278,7 @@ We propose that field numbers with bit 11 set (for most use cases this is
 the range of 1024-2047) be considered non-critical fields that can safely be
 ignored if unknown.
 
-To handle this we will need a unknown field filter that:
+To handle this we will need an unknown field filter that:
 
 * always rejects unknown fields in unsigned content (i.e. top-level `Tx` and
   unsigned parts of `AuthInfo` if present based on the signing mode)
@@ -295,7 +296,7 @@ The following public keys are implemented: secp256k1, secp256r1, ed25519 and leg
 
 Ex:
 
-```proto
+```protobuf
 message PubKey {
     bytes key = 1;
 }
@@ -316,6 +317,8 @@ in the client can be interfaces, similar to how we described in [ADR 019](./adr-
 the client logic will now need to take a codec interface that knows not only how
 to handle all the types, but also knows how to generate transactions, signatures,
 and messages.
+
+If the account is sending its first transaction, the account number must be set to 0. This is due to the account not being created yet. 
 
 ```go
 type AccountRetriever interface {
@@ -346,7 +349,7 @@ type TxBuilder interface {
 ```
 
 We then update `Context` to have new fields: `Codec`, `TxGenerator`,
-and `AccountRetriever`, and we update `AppModuleBasic.GetTxCmd` to take
+and `AccountRetriever`, and we update `AppModule.GetTxCmd` to take
 a `Context` which should have all of these fields pre-populated.
 
 Each client method should then use one of the `Init` methods to re-initialize
@@ -408,7 +411,7 @@ To generate a signature in `SIGN_MODE_DIRECT_AUX` these steps would be followed:
 1. Encode `SignDocAux` (with the same requirement that fields must be serialized
    in order):
 
-    ```proto
+    ```protobuf
     // types/types.proto
     message SignDocAux {
         bytes body_bytes = 1;

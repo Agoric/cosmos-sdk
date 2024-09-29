@@ -2,130 +2,153 @@ package keeper_test
 
 import (
 	"testing"
+	"time"
 
-	"github.com/stretchr/testify/assert"
+	"github.com/golang/mock/gomock"
 	"github.com/stretchr/testify/require"
-	tmproto "github.com/tendermint/tendermint/proto/tendermint/types"
 
-	"github.com/cosmos/cosmos-sdk/simapp"
+	"cosmossdk.io/core/header"
+	coretesting "cosmossdk.io/core/testing"
+	"cosmossdk.io/math"
+	storetypes "cosmossdk.io/store/types"
+	"cosmossdk.io/x/distribution"
+	"cosmossdk.io/x/distribution/keeper"
+	distrtestutil "cosmossdk.io/x/distribution/testutil"
+	"cosmossdk.io/x/distribution/types"
+
+	"github.com/cosmos/cosmos-sdk/codec/address"
+	codectestutil "github.com/cosmos/cosmos-sdk/codec/testutil"
+	"github.com/cosmos/cosmos-sdk/runtime"
+	"github.com/cosmos/cosmos-sdk/testutil"
+	simtestutil "github.com/cosmos/cosmos-sdk/testutil/sims"
 	sdk "github.com/cosmos/cosmos-sdk/types"
-	"github.com/cosmos/cosmos-sdk/x/bank/testutil"
-	"github.com/cosmos/cosmos-sdk/x/distribution/types"
+	moduletestutil "github.com/cosmos/cosmos-sdk/types/module/testutil"
+	authtypes "github.com/cosmos/cosmos-sdk/x/auth/types"
 )
 
+type dep struct {
+	bankKeeper    *distrtestutil.MockBankKeeper
+	stakingKeeper *distrtestutil.MockStakingKeeper
+	accountKeeper *distrtestutil.MockAccountKeeper
+}
+
+func initFixture(t *testing.T) (sdk.Context, []sdk.AccAddress, keeper.Keeper, dep) {
+	t.Helper()
+
+	ctrl := gomock.NewController(t)
+	key := storetypes.NewKVStoreKey(types.StoreKey)
+	testCtx := testutil.DefaultContextWithDB(t, key, storetypes.NewTransientStoreKey("transient_test"))
+	cdcOpts := codectestutil.CodecOptions{}
+	encCfg := moduletestutil.MakeTestEncodingConfig(cdcOpts, distribution.AppModule{})
+	ctx := testCtx.Ctx.WithHeaderInfo(header.Info{Time: time.Now()})
+	addrs := simtestutil.CreateIncrementalAccounts(2)
+
+	bankKeeper := distrtestutil.NewMockBankKeeper(ctrl)
+	stakingKeeper := distrtestutil.NewMockStakingKeeper(ctrl)
+	accountKeeper := distrtestutil.NewMockAccountKeeper(ctrl)
+
+	accountKeeper.EXPECT().GetModuleAddress("distribution").Return(distrAcc.GetAddress())
+	accountKeeper.EXPECT().AddressCodec().Return(address.NewBech32Codec("cosmos")).AnyTimes()
+
+	stakingKeeper.EXPECT().ValidatorAddressCodec().Return(address.NewBech32Codec("cosmosvaloper")).AnyTimes()
+
+	withdrawAddr := addrs[1]
+	bankKeeper.EXPECT().BlockedAddr(withdrawAddr).Return(false).AnyTimes()
+	bankKeeper.EXPECT().BlockedAddr(distrAcc.GetAddress()).Return(true).AnyTimes()
+
+	env := runtime.NewEnvironment(runtime.NewKVStoreService(key), coretesting.NewNopLogger())
+
+	authorityAddr, err := cdcOpts.GetAddressCodec().BytesToString(authtypes.NewModuleAddress("gov"))
+	require.NoError(t, err)
+
+	distrKeeper := keeper.NewKeeper(
+		encCfg.Codec,
+		env,
+		accountKeeper,
+		bankKeeper,
+		stakingKeeper,
+		testCometService,
+		"fee_collector",
+		authorityAddr,
+	)
+
+	params := types.DefaultParams()
+	require.NoError(t, distrKeeper.Params.Set(ctx, params))
+
+	return ctx, addrs, distrKeeper, dep{bankKeeper, stakingKeeper, accountKeeper}
+}
+
 func TestSetWithdrawAddr(t *testing.T) {
-	app := simapp.Setup(t, false)
-	ctx := app.BaseApp.NewContext(false, tmproto.Header{})
+	ctx, addrs, distrKeeper, _ := initFixture(t)
 
-	addr := simapp.AddTestAddrs(app, ctx, 2, sdk.NewInt(1000000000))
-
-	params := app.DistrKeeper.GetParams(ctx)
+	params := types.DefaultParams()
 	params.WithdrawAddrEnabled = false
-	app.DistrKeeper.SetParams(ctx, params)
+	require.NoError(t, distrKeeper.Params.Set(ctx, params))
 
-	err := app.DistrKeeper.SetWithdrawAddr(ctx, addr[0], addr[1])
+	delegatorAddr := addrs[0]
+	withdrawAddr := addrs[1]
+
+	err := distrKeeper.SetWithdrawAddr(ctx, delegatorAddr, withdrawAddr)
 	require.NotNil(t, err)
 
 	params.WithdrawAddrEnabled = true
-	app.DistrKeeper.SetParams(ctx, params)
+	require.NoError(t, distrKeeper.Params.Set(ctx, params))
 
-	err = app.DistrKeeper.SetWithdrawAddr(ctx, addr[0], addr[1])
+	err = distrKeeper.SetWithdrawAddr(ctx, delegatorAddr, withdrawAddr)
 	require.Nil(t, err)
+	addr, err := distrKeeper.GetDelegatorWithdrawAddr(ctx, delegatorAddr)
+	require.NoError(t, err)
+	require.Equal(t, addr, withdrawAddr)
 
-	require.Error(t, app.DistrKeeper.SetWithdrawAddr(ctx, addr[0], distrAcc.GetAddress()))
+	require.Error(t, distrKeeper.SetWithdrawAddr(ctx, delegatorAddr, distrAcc.GetAddress()))
 }
 
 func TestWithdrawValidatorCommission(t *testing.T) {
-	app := simapp.Setup(t, false)
-	ctx := app.BaseApp.NewContext(false, tmproto.Header{})
+	ctx, addrs, distrKeeper, dep := initFixture(t)
 
+	valAddr := sdk.ValAddress(addrs[0])
 	valCommission := sdk.DecCoins{
-		sdk.NewDecCoinFromDec("mytoken", sdk.NewDec(5).Quo(sdk.NewDec(4))),
-		sdk.NewDecCoinFromDec("stake", sdk.NewDec(3).Quo(sdk.NewDec(2))),
+		sdk.NewDecCoinFromDec("mytoken", math.LegacyNewDec(5).Quo(math.LegacyNewDec(4))),
+		sdk.NewDecCoinFromDec("stake", math.LegacyNewDec(3).Quo(math.LegacyNewDec(2))),
 	}
 
-	addr := simapp.AddTestAddrs(app, ctx, 1, sdk.NewInt(1000000000))
-	valAddrs := simapp.ConvertAddrsToValAddrs(addr)
-
-	// set module account coins
-	distrAcc := app.DistrKeeper.GetDistributionAccount(ctx)
-	coins := sdk.NewCoins(sdk.NewCoin("mytoken", sdk.NewInt(2)), sdk.NewCoin("stake", sdk.NewInt(2)))
-	require.NoError(t, testutil.FundModuleAccount(app.BankKeeper, ctx, distrAcc.GetName(), coins))
-
-	app.AccountKeeper.SetModuleAccount(ctx, distrAcc)
-
-	// check initial balance
-	balance := app.BankKeeper.GetAllBalances(ctx, sdk.AccAddress(valAddrs[0]))
-	expTokens := app.StakingKeeper.TokensFromConsensusPower(ctx, 1000)
-	expCoins := sdk.NewCoins(sdk.NewCoin("stake", expTokens))
-	require.Equal(t, expCoins, balance)
-
 	// set outstanding rewards
-	app.DistrKeeper.SetValidatorOutstandingRewards(ctx, valAddrs[0], types.ValidatorOutstandingRewards{Rewards: valCommission})
+	require.NoError(t, distrKeeper.ValidatorOutstandingRewards.Set(ctx, valAddr, types.ValidatorOutstandingRewards{Rewards: valCommission}))
 
 	// set commission
-	app.DistrKeeper.SetValidatorAccumulatedCommission(ctx, valAddrs[0], types.ValidatorAccumulatedCommission{Commission: valCommission})
+	require.NoError(t, distrKeeper.ValidatorsAccumulatedCommission.Set(ctx, valAddr, types.ValidatorAccumulatedCommission{Commission: valCommission}))
 
 	// withdraw commission
-	_, err := app.DistrKeeper.WithdrawValidatorCommission(ctx, valAddrs[0])
+	coins := sdk.NewCoins(sdk.NewCoin("mytoken", math.NewInt(1)), sdk.NewCoin("stake", math.NewInt(1)))
+	// if SendCoinsFromModuleToAccount is called, we know that the withdraw was successful
+	dep.bankKeeper.EXPECT().SendCoinsFromModuleToAccount(gomock.Any(), "distribution", addrs[0], coins).Return(nil)
+
+	_, err := distrKeeper.WithdrawValidatorCommission(ctx, valAddr)
 	require.NoError(t, err)
 
-	// check balance increase
-	balance = app.BankKeeper.GetAllBalances(ctx, sdk.AccAddress(valAddrs[0]))
-	require.Equal(t, sdk.NewCoins(
-		sdk.NewCoin("mytoken", sdk.NewInt(1)),
-		sdk.NewCoin("stake", expTokens.AddRaw(1)),
-	), balance)
-
 	// check remainder
-	remainder := app.DistrKeeper.GetValidatorAccumulatedCommission(ctx, valAddrs[0]).Commission
+	remainderValCommission, err := distrKeeper.ValidatorsAccumulatedCommission.Get(ctx, valAddr)
+	require.NoError(t, err)
+	remainder := remainderValCommission.Commission
 	require.Equal(t, sdk.DecCoins{
-		sdk.NewDecCoinFromDec("mytoken", sdk.NewDec(1).Quo(sdk.NewDec(4))),
-		sdk.NewDecCoinFromDec("stake", sdk.NewDec(1).Quo(sdk.NewDec(2))),
+		sdk.NewDecCoinFromDec("mytoken", math.LegacyNewDec(1).Quo(math.LegacyNewDec(4))),
+		sdk.NewDecCoinFromDec("stake", math.LegacyNewDec(1).Quo(math.LegacyNewDec(2))),
 	}, remainder)
-
-	require.True(t, true)
 }
 
 func TestGetTotalRewards(t *testing.T) {
-	app := simapp.Setup(t, false)
-	ctx := app.BaseApp.NewContext(false, tmproto.Header{})
+	ctx, addrs, distrKeeper, _ := initFixture(t)
 
 	valCommission := sdk.DecCoins{
-		sdk.NewDecCoinFromDec("mytoken", sdk.NewDec(5).Quo(sdk.NewDec(4))),
-		sdk.NewDecCoinFromDec("stake", sdk.NewDec(3).Quo(sdk.NewDec(2))),
+		sdk.NewDecCoinFromDec("mytoken", math.LegacyNewDec(5).Quo(math.LegacyNewDec(4))),
+		sdk.NewDecCoinFromDec("stake", math.LegacyNewDec(3).Quo(math.LegacyNewDec(2))),
 	}
 
-	addr := simapp.AddTestAddrs(app, ctx, 2, sdk.NewInt(1000000000))
-	valAddrs := simapp.ConvertAddrsToValAddrs(addr)
+	require.NoError(t, distrKeeper.ValidatorOutstandingRewards.Set(ctx, sdk.ValAddress(addrs[0]), types.ValidatorOutstandingRewards{Rewards: valCommission}))
+	require.NoError(t, distrKeeper.ValidatorOutstandingRewards.Set(ctx, sdk.ValAddress(addrs[1]), types.ValidatorOutstandingRewards{Rewards: valCommission}))
 
-	app.DistrKeeper.SetValidatorOutstandingRewards(ctx, valAddrs[0], types.ValidatorOutstandingRewards{Rewards: valCommission})
-	app.DistrKeeper.SetValidatorOutstandingRewards(ctx, valAddrs[1], types.ValidatorOutstandingRewards{Rewards: valCommission})
-
-	expectedRewards := valCommission.MulDec(sdk.NewDec(2))
-	totalRewards := app.DistrKeeper.GetTotalRewards(ctx)
+	expectedRewards := valCommission.MulDec(math.LegacyNewDec(2))
+	totalRewards := distrKeeper.GetTotalRewards(ctx)
 
 	require.Equal(t, expectedRewards, totalRewards)
-}
-
-func TestFundCommunityPool(t *testing.T) {
-	app := simapp.Setup(t, false)
-	ctx := app.BaseApp.NewContext(false, tmproto.Header{})
-
-	// reset fee pool
-	app.DistrKeeper.SetFeePool(ctx, types.InitialFeePool())
-
-	addr := simapp.AddTestAddrs(app, ctx, 2, sdk.ZeroInt())
-
-	amount := sdk.NewCoins(sdk.NewInt64Coin("stake", 100))
-	require.NoError(t, testutil.FundAccount(app.BankKeeper, ctx, addr[0], amount))
-
-	initPool := app.DistrKeeper.GetFeePool(ctx)
-	assert.Empty(t, initPool.CommunityPool)
-
-	err := app.DistrKeeper.FundCommunityPool(ctx, amount, addr[0])
-	assert.Nil(t, err)
-
-	assert.Equal(t, initPool.CommunityPool.Add(sdk.NewDecCoinsFromCoins(amount...)...), app.DistrKeeper.GetFeePool(ctx).CommunityPool)
-	assert.Empty(t, app.BankKeeper.GetAllBalances(ctx, addr[0]))
 }

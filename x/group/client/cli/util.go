@@ -2,17 +2,20 @@ package cli
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 
+	"cosmossdk.io/x/group"
+
 	"github.com/cosmos/cosmos-sdk/codec"
 	sdk "github.com/cosmos/cosmos-sdk/types"
-	"github.com/cosmos/cosmos-sdk/x/group"
 )
 
+// parseDecisionPolicy reads and parses the decision policy.
 func parseDecisionPolicy(cdc codec.Codec, decisionPolicyFile string) (group.DecisionPolicy, error) {
 	if decisionPolicyFile == "" {
-		return nil, fmt.Errorf("decision policy is required")
+		return nil, errors.New("decision policy is required")
 	}
 
 	contents, err := os.ReadFile(decisionPolicyFile)
@@ -28,8 +31,11 @@ func parseDecisionPolicy(cdc codec.Codec, decisionPolicyFile string) (group.Deci
 	return policy, nil
 }
 
+// parseMembers reads and parses the members.
 func parseMembers(membersFile string) ([]group.MemberRequest, error) {
-	members := group.MemberRequests{}
+	members := struct {
+		Members []group.MemberRequest `json:"members"`
+	}{}
 
 	if membersFile == "" {
 		return members.Members, nil
@@ -40,8 +46,7 @@ func parseMembers(membersFile string) ([]group.MemberRequest, error) {
 		return nil, err
 	}
 
-	err = json.Unmarshal(contents, &members)
-	if err != nil {
+	if err := json.Unmarshal(contents, &members); err != nil {
 		return nil, err
 	}
 
@@ -50,10 +55,10 @@ func parseMembers(membersFile string) ([]group.MemberRequest, error) {
 
 func execFromString(execStr string) group.Exec {
 	exec := group.Exec_EXEC_UNSPECIFIED
-	switch execStr { //nolint:gocritic
-	case ExecTry:
+	if execStr == ExecTry {
 		exec = group.Exec_EXEC_TRY
 	}
+
 	return exec
 }
 
@@ -63,7 +68,9 @@ type Proposal struct {
 	// Messages defines an array of sdk.Msgs proto-JSON-encoded as Anys.
 	Messages  []json.RawMessage `json:"messages,omitempty"`
 	Metadata  string            `json:"metadata"`
-	Proposers []string          `json:"proposers,omitempty"`
+	Proposers []string          `json:"proposers"`
+	Title     string            `json:"title"`
+	Summary   string            `json:"summary"`
 }
 
 func getCLIProposal(path string) (Proposal, error) {

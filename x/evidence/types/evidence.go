@@ -1,44 +1,35 @@
 package types
 
 import (
+	"crypto/sha256"
 	"fmt"
 	"time"
 
-	abci "github.com/tendermint/tendermint/abci/types"
-	"github.com/tendermint/tendermint/crypto/tmhash"
-	tmbytes "github.com/tendermint/tendermint/libs/bytes"
-	"sigs.k8s.io/yaml"
+	"cosmossdk.io/core/address"
+	"cosmossdk.io/core/comet"
+	"cosmossdk.io/x/evidence/exported"
 
 	sdk "github.com/cosmos/cosmos-sdk/types"
-	"github.com/cosmos/cosmos-sdk/x/evidence/exported"
 )
 
 // Evidence type constants
-const (
-	RouteEquivocation = "equivocation"
-	TypeEquivocation  = "equivocation"
-)
+const RouteEquivocation = "equivocation"
 
 var _ exported.Evidence = &Equivocation{}
 
 // Route returns the Evidence Handler route for an Equivocation type.
 func (e *Equivocation) Route() string { return RouteEquivocation }
 
-// Type returns the Evidence Handler type for an Equivocation type.
-func (e *Equivocation) Type() string { return TypeEquivocation }
-
-func (e *Equivocation) String() string {
-	bz, _ := yaml.Marshal(e)
-	return string(bz)
-}
-
 // Hash returns the hash of an Equivocation object.
-func (e *Equivocation) Hash() tmbytes.HexBytes {
+func (e *Equivocation) Hash() []byte {
 	bz, err := e.Marshal()
 	if err != nil {
 		panic(err)
 	}
-	return tmhash.Sum(bz)
+
+	hash := sha256.Sum256(bz)
+
+	return hash[:]
 }
 
 // ValidateBasic performs basic stateless validation checks on an Equivocation object.
@@ -61,8 +52,8 @@ func (e *Equivocation) ValidateBasic() error {
 
 // GetConsensusAddress returns the validator's consensus address at time of the
 // Equivocation infraction.
-func (e Equivocation) GetConsensusAddress() sdk.ConsAddress {
-	addr, _ := sdk.ConsAddressFromBech32(e.ConsensusAddress)
+func (e Equivocation) GetConsensusAddress(consAc address.Codec) sdk.ConsAddress {
+	addr, _ := consAc.StringToBytes(e.ConsensusAddress)
 	return addr
 }
 
@@ -85,11 +76,10 @@ func (e Equivocation) GetValidatorPower() int64 {
 // GetTotalPower is a no-op for the Equivocation type.
 func (e Equivocation) GetTotalPower() int64 { return 0 }
 
-// FromABCIEvidence converts a Tendermint concrete Evidence type to
+// FromABCIEvidence converts a CometBFT concrete Evidence type to
 // SDK Evidence using Equivocation as the concrete type.
-func FromABCIEvidence(e abci.Evidence) exported.Evidence {
-	bech32PrefixConsAddr := sdk.GetConfig().GetBech32ConsensusAddrPrefix()
-	consAddr, err := sdk.Bech32ifyAddressBytes(bech32PrefixConsAddr, e.Validator.Address)
+func FromABCIEvidence(e comet.Evidence, conAc address.Codec) *Equivocation {
+	consAddr, err := conAc.BytesToString(e.Validator.Address)
 	if err != nil {
 		panic(err)
 	}

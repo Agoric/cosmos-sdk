@@ -7,10 +7,8 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
-	"sigs.k8s.io/yaml"
 
 	"github.com/cosmos/cosmos-sdk/crypto/keys/secp256k1"
-	"github.com/cosmos/cosmos-sdk/simapp"
 	"github.com/cosmos/cosmos-sdk/testutil/testdata"
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	"github.com/cosmos/cosmos-sdk/x/auth/types"
@@ -47,6 +45,10 @@ func TestBaseAddressPubKey(t *testing.T) {
 	err = acc2.SetAddress(addr2)
 	require.Nil(t, err)
 	require.EqualValues(t, addr2, acc2.GetAddress())
+
+	// no panic on calling string with an account with pubkey
+	require.NotEmpty(t, acc.String())
+	require.NotPanics(t, func() { _ = acc.String() })
 }
 
 func TestBaseSequence(t *testing.T) {
@@ -57,30 +59,6 @@ func TestBaseSequence(t *testing.T) {
 	err := acc.SetSequence(seq)
 	require.Nil(t, err)
 	require.Equal(t, seq, acc.GetSequence())
-}
-
-func TestBaseAccountMarshal(t *testing.T) {
-	app := simapp.Setup(t, false)
-	_, pub, addr := testdata.KeyTestPubAddr()
-	acc := types.NewBaseAccountWithAddress(addr)
-	seq := uint64(7)
-
-	// set everything on the account
-	err := acc.SetPubKey(pub)
-	require.Nil(t, err)
-	err = acc.SetSequence(seq)
-	require.Nil(t, err)
-
-	bz, err := app.AccountKeeper.MarshalAccount(acc)
-	require.Nil(t, err)
-
-	acc2, err := app.AccountKeeper.UnmarshalAccount(bz)
-	require.Nil(t, err)
-	require.Equal(t, acc, acc2)
-
-	// error on bad bytes
-	_, err = app.AccountKeeper.UnmarshalAccount(bz[:len(bz)/2])
-	require.NotNil(t, err)
 }
 
 func TestGenesisAccountValidate(t *testing.T) {
@@ -106,22 +84,21 @@ func TestGenesisAccountValidate(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		tt := tt
-
 		t.Run(tt.name, func(t *testing.T) {
 			require.Equal(t, tt.expErr, tt.acc.Validate() != nil)
 		})
 	}
 }
 
-func TestModuleAccountMarshalYAML(t *testing.T) {
+func TestModuleAccountString(t *testing.T) {
 	name := "test"
 	moduleAcc := types.NewEmptyModuleAccount(name, types.Minter, types.Burner, types.Staking)
-	bs, err := yaml.Marshal(moduleAcc)
+	want := `base_account:<address:"cosmos1n7rdpqvgf37ktx30a2sv2kkszk3m7ncmg5drhe" > name:"test" permissions:"minter" permissions:"burner" permissions:"staking" `
+	require.Equal(t, want, moduleAcc.String())
+	err := moduleAcc.SetSequence(10)
 	require.NoError(t, err)
-
-	want := "account_number: 0\naddress: cosmos1n7rdpqvgf37ktx30a2sv2kkszk3m7ncmg5drhe\nname: test\npermissions:\n- minter\n- burner\n- staking\npublic_key: \"\"\nsequence: 0\n"
-	require.Equal(t, want, string(bs))
+	want = `base_account:<address:"cosmos1n7rdpqvgf37ktx30a2sv2kkszk3m7ncmg5drhe" sequence:10 > name:"test" permissions:"minter" permissions:"burner" permissions:"staking" `
+	require.Equal(t, want, moduleAcc.String())
 }
 
 func TestHasPermissions(t *testing.T) {
@@ -172,7 +149,6 @@ func TestValidate(t *testing.T) {
 		},
 	}
 	for _, tt := range tests {
-		tt := tt
 		t.Run(tt.name, func(t *testing.T) {
 			err := tt.acc.Validate()
 			require.Equal(t, tt.expErr, err)
@@ -208,6 +184,12 @@ func TestGenesisAccountsContains(t *testing.T) {
 
 	genAccounts = append(genAccounts, acc)
 	require.True(t, genAccounts.Contains(acc.GetAddress()))
+}
+
+func TestNewModuleAddressOrBech32Address(t *testing.T) {
+	input := "cosmos1cwwv22j5ca08ggdv9c2uky355k908694z577tv"
+	require.Equal(t, input, types.NewModuleAddressOrBech32Address(input).String())
+	require.Equal(t, "cosmos1jv65s3grqf6v6jl3dp4t6c9t9rk99cd88lyufl", types.NewModuleAddressOrBech32Address("distribution").String())
 }
 
 func TestModuleAccountValidateNilBaseAccount(t *testing.T) {

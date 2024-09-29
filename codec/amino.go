@@ -7,8 +7,10 @@ import (
 	"fmt"
 	"io"
 
-	amino "github.com/tendermint/go-amino"
-	tmtypes "github.com/tendermint/tendermint/types"
+	cmttypes "github.com/cometbft/cometbft/types"
+	"github.com/tendermint/go-amino"
+
+	"cosmossdk.io/core/registry"
 
 	"github.com/cosmos/cosmos-sdk/codec/types"
 )
@@ -23,15 +25,17 @@ func (cdc *LegacyAmino) Seal() {
 	cdc.Amino.Seal()
 }
 
+var _ registry.AminoRegistrar = &LegacyAmino{}
+
 func NewLegacyAmino() *LegacyAmino {
 	return &LegacyAmino{amino.NewCodec()}
 }
 
-// RegisterEvidences registers Tendermint evidence types with the provided Amino
+// RegisterEvidences registers CometBFT evidence types with the provided Amino
 // codec.
-func RegisterEvidences(cdc *LegacyAmino) {
-	cdc.Amino.RegisterInterface((*tmtypes.Evidence)(nil), nil)
-	cdc.Amino.RegisterConcrete(&tmtypes.DuplicateVoteEvidence{}, "tendermint/DuplicateVoteEvidence", nil)
+func RegisterEvidences(registrar registry.AminoRegistrar) {
+	registrar.RegisterInterface((*cmttypes.Evidence)(nil), nil)
+	registrar.RegisterConcrete(&cmttypes.DuplicateVoteEvidence{}, "tendermint/DuplicateVoteEvidence")
 }
 
 // MarshalJSONIndent provides a utility for indented JSON encoding of an object
@@ -175,12 +179,19 @@ func (*LegacyAmino) UnpackAny(*types.Any, interface{}) error {
 	return errors.New("AminoCodec can't handle unpack protobuf Any's")
 }
 
-func (cdc *LegacyAmino) RegisterInterface(ptr interface{}, iopts *amino.InterfaceOptions) {
-	cdc.Amino.RegisterInterface(ptr, iopts)
+func (cdc *LegacyAmino) RegisterInterface(ptr interface{}, iopts *registry.AminoInterfaceOptions) {
+	if iopts == nil {
+		cdc.Amino.RegisterInterface(ptr, nil)
+	} else {
+		cdc.Amino.RegisterInterface(ptr, &amino.InterfaceOptions{
+			Priority:           iopts.Priority,
+			AlwaysDisambiguate: iopts.AlwaysDisambiguate,
+		})
+	}
 }
 
-func (cdc *LegacyAmino) RegisterConcrete(o interface{}, name string, copts *amino.ConcreteOptions) {
-	cdc.Amino.RegisterConcrete(o, name, copts)
+func (cdc *LegacyAmino) RegisterConcrete(o interface{}, name string) {
+	cdc.Amino.RegisterConcrete(o, name, nil)
 }
 
 func (cdc *LegacyAmino) MarshalJSONIndent(o interface{}, prefix, indent string) ([]byte, error) {

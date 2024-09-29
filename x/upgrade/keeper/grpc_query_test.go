@@ -1,36 +1,63 @@
 package keeper_test
 
 import (
-	gocontext "context"
+	"context"
 	"fmt"
 	"testing"
 
+	"github.com/golang/mock/gomock"
 	"github.com/stretchr/testify/suite"
-	tmproto "github.com/tendermint/tendermint/proto/tendermint/types"
+
+	"cosmossdk.io/core/appmodule"
+	"cosmossdk.io/core/header"
+	coretesting "cosmossdk.io/core/testing"
+	storetypes "cosmossdk.io/store/types"
+	"cosmossdk.io/x/upgrade"
+	"cosmossdk.io/x/upgrade/keeper"
+	upgradetestutil "cosmossdk.io/x/upgrade/testutil"
+	"cosmossdk.io/x/upgrade/types"
 
 	"github.com/cosmos/cosmos-sdk/baseapp"
-	"github.com/cosmos/cosmos-sdk/simapp"
+	addresscodec "github.com/cosmos/cosmos-sdk/codec/address"
+	codectestutil "github.com/cosmos/cosmos-sdk/codec/testutil"
+	"github.com/cosmos/cosmos-sdk/runtime"
+	"github.com/cosmos/cosmos-sdk/testutil"
 	sdk "github.com/cosmos/cosmos-sdk/types"
-	"github.com/cosmos/cosmos-sdk/types/module"
+	moduletestutil "github.com/cosmos/cosmos-sdk/types/module/testutil"
 	authtypes "github.com/cosmos/cosmos-sdk/x/auth/types"
-	govtypes "github.com/cosmos/cosmos-sdk/x/gov/types"
-	"github.com/cosmos/cosmos-sdk/x/upgrade/types"
 )
 
 type UpgradeTestSuite struct {
 	suite.Suite
 
-	app         *simapp.SimApp
-	ctx         sdk.Context
-	queryClient types.QueryClient
+	upgradeKeeper    *keeper.Keeper
+	ctx              sdk.Context
+	queryClient      types.QueryClient
+	encCfg           moduletestutil.TestEncodingConfig
+	encodedAuthority string
 }
 
 func (suite *UpgradeTestSuite) SetupTest() {
-	suite.app = simapp.Setup(suite.T(), false)
-	suite.ctx = suite.app.BaseApp.NewContext(false, tmproto.Header{})
+	suite.encCfg = moduletestutil.MakeTestEncodingConfig(codectestutil.CodecOptions{}, upgrade.AppModule{})
+	key := storetypes.NewKVStoreKey(types.StoreKey)
+	storeService := runtime.NewKVStoreService(key)
+	env := runtime.NewEnvironment(storeService, coretesting.NewNopLogger())
+	testCtx := testutil.DefaultContextWithDB(suite.T(), key, storetypes.NewTransientStoreKey("transient_test"))
+	suite.ctx = testCtx.Ctx
 
-	queryHelper := baseapp.NewQueryServerTestHelper(suite.ctx, suite.app.InterfaceRegistry())
-	types.RegisterQueryServer(queryHelper, suite.app.UpgradeKeeper)
+	skipUpgradeHeights := make(map[int64]bool)
+	authority, err := addresscodec.NewBech32Codec("cosmos").BytesToString(authtypes.NewModuleAddress(types.GovModuleName))
+	suite.Require().NoError(err)
+	suite.encodedAuthority = authority
+	ctrl := gomock.NewController(suite.T())
+	ck := upgradetestutil.NewMockConsensusKeeper(ctrl)
+	suite.upgradeKeeper = keeper.NewKeeper(env, skipUpgradeHeights, suite.encCfg.Codec, suite.T().TempDir(), nil, authority, ck)
+	err = suite.upgradeKeeper.SetModuleVersionMap(suite.ctx, appmodule.VersionMap{
+		"bank": 0,
+	})
+	suite.Require().NoError(err)
+	queryHelper := baseapp.NewQueryServerTestHelper(testCtx.Ctx, suite.encCfg.InterfaceRegistry)
+	types.RegisterQueryServer(queryHelper, suite.upgradeKeeper)
 	suite.queryClient = types.NewQueryClient(queryHelper)
 }
 
@@ -57,8 +84,8 @@ func (suite *UpgradeTestSuite) TestQueryCurrentPlan() {
 			"with current upgrade plan",
 			func() {
 				plan := types.Plan{Name: "test-plan", Height: 5}
-				suite.app.UpgradeKeeper.ScheduleUpgrade(suite.ctx, plan)
-
+				err := suite.upgradeKeeper.ScheduleUpgrade(suite.ctx, plan)
+				suite.Require().NoError(err)
 				req = &types.QueryCurrentPlanRequest{}
 				expResponse = types.QueryCurrentPlanResponse{Plan: &plan}
 			},
@@ -72,7 +99,7 @@ func (suite *UpgradeTestSuite) TestQueryCurrentPlan() {
 
 			tc.malleate()
 
-			res, err := suite.queryClient.CurrentPlan(gocontext.Background(), req)
+			res, err := suite.queryClient.CurrentPlan(context.Background(), req)
 
 			if tc.expPass {
 				suite.Require().NoError(err)
@@ -110,14 +137,14 @@ func (suite *UpgradeTestSuite) TestAppliedCurrentPlan() {
 
 				planName := "test-plan"
 				plan := types.Plan{Name: planName, Height: expHeight}
-				suite.app.UpgradeKeeper.ScheduleUpgrade(suite.ctx, plan)
-
-				suite.ctx = suite.ctx.WithBlockHeight(expHeight)
-				suite.app.UpgradeKeeper.SetUpgradeHandler(planName, func(ctx sdk.Context, plan types.Plan, vm module.VersionMap) (module.VersionMap, error) {
+				err := suite.upgradeKeeper.ScheduleUpgrade(suite.ctx, plan)
+				suite.Require().NoError(err)
+				suite.ctx = suite.ctx.WithHeaderInfo(header.Info{Height: expHeight})
+				suite.upgradeKeeper.SetUpgradeHandler(planName, func(ctx context.Context, plan types.Plan, vm appmodule.VersionMap) (appmodule.VersionMap, error) {
 					return vm, nil
 				})
-				suite.app.UpgradeKeeper.ApplyUpgrade(suite.ctx, plan)
-
+				err = suite.upgradeKeeper.ApplyUpgrade(suite.ctx, plan)
+				suite.Require().NoError(err)
 				req = &types.QueryAppliedPlanRequest{Name: planName}
 			},
 			true,
@@ -130,7 +157,7 @@ func (suite *UpgradeTestSuite) TestAppliedCurrentPlan() {
 
 			tc.malleate()
 
-			res, err := suite.queryClient.AppliedPlan(gocontext.Background(), req)
+			res, err := suite.queryClient.AppliedPlan(context.Background(), req)
 
 			if tc.expPass {
 				suite.Require().NoError(err)
@@ -170,14 +197,17 @@ func (suite *UpgradeTestSuite) TestModuleVersions() {
 		},
 	}
 
-	vm := suite.app.UpgradeKeeper.GetModuleVersionMap(suite.ctx)
-	mv := suite.app.UpgradeKeeper.GetModuleVersions(suite.ctx)
+	vm, err := suite.upgradeKeeper.GetModuleVersionMap(suite.ctx)
+	suite.Require().NoError(err)
+
+	mv, err := suite.upgradeKeeper.GetModuleVersions(suite.ctx)
+	suite.Require().NoError(err)
 
 	for _, tc := range testCases {
 		suite.Run(fmt.Sprintf("Case %s", tc.msg), func() {
 			suite.SetupTest() // reset
 
-			res, err := suite.queryClient.ModuleVersions(gocontext.Background(), &tc.req)
+			res, err := suite.queryClient.ModuleVersions(context.Background(), &tc.req)
 
 			if tc.expPass {
 				suite.Require().NoError(err)
@@ -206,9 +236,9 @@ func (suite *UpgradeTestSuite) TestModuleVersions() {
 }
 
 func (suite *UpgradeTestSuite) TestAuthority() {
-	res, err := suite.queryClient.Authority(gocontext.Background(), &types.QueryAuthorityRequest{})
+	res, err := suite.queryClient.Authority(context.Background(), &types.QueryAuthorityRequest{})
 	suite.Require().NoError(err)
-	suite.Require().Equal(authtypes.NewModuleAddress(govtypes.ModuleName).String(), res.Address)
+	suite.Require().Equal(suite.encodedAuthority, res.Address)
 }
 
 func TestUpgradeTestSuite(t *testing.T) {

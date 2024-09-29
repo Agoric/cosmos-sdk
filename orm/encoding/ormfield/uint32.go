@@ -2,7 +2,7 @@ package ormfield
 
 import (
 	"encoding/binary"
-	"fmt"
+	"errors"
 	"io"
 
 	"google.golang.org/protobuf/reflect/protoreflect"
@@ -34,7 +34,11 @@ func (u FixedUint32Codec) Decode(r Reader) (protoreflect.Value, error) {
 }
 
 func (u FixedUint32Codec) Encode(value protoreflect.Value, w io.Writer) error {
-	return binary.Write(w, binary.BigEndian, uint32(value.Uint()))
+	var x uint64
+	if value.IsValid() {
+		x = value.Uint()
+	}
+	return binary.Write(w, binary.BigEndian, uint32(x))
 }
 
 // CompactUint32Codec encodes uint32 values using EncodeCompactUint32.
@@ -46,7 +50,11 @@ func (c CompactUint32Codec) Decode(r Reader) (protoreflect.Value, error) {
 }
 
 func (c CompactUint32Codec) Encode(value protoreflect.Value, w io.Writer) error {
-	_, err := w.Write(EncodeCompactUint32(uint32(value.Uint())))
+	var x uint64
+	if value.IsValid() {
+		x = value.Uint()
+	}
+	_, err := w.Write(EncodeCompactUint32(uint32(x)))
 	return err
 }
 
@@ -175,6 +183,6 @@ func DecodeCompactUint32(reader io.Reader) (uint32, error) {
 		x |= uint32(buf[4])
 		return x, nil
 	default:
-		return 0, fmt.Errorf("unexpected case")
+		return 0, errors.New("unexpected case")
 	}
 }

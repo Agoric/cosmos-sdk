@@ -1,50 +1,40 @@
 package v1
 
 import (
-	"github.com/cosmos/cosmos-sdk/codec"
+	"cosmossdk.io/core/registry"
+	coretransaction "cosmossdk.io/core/transaction"
+
 	"github.com/cosmos/cosmos-sdk/codec/legacy"
-	codectypes "github.com/cosmos/cosmos-sdk/codec/types"
-	cryptocodec "github.com/cosmos/cosmos-sdk/crypto/codec"
-	sdk "github.com/cosmos/cosmos-sdk/types"
 	"github.com/cosmos/cosmos-sdk/types/msgservice"
-	authzcodec "github.com/cosmos/cosmos-sdk/x/authz/codec"
-	"github.com/cosmos/cosmos-sdk/x/gov/types/v1beta1"
 )
 
 // RegisterLegacyAminoCodec registers all the necessary types and interfaces for the
 // governance module.
-func RegisterLegacyAminoCodec(cdc *codec.LegacyAmino) {
-	legacy.RegisterAminoMsg(cdc, &MsgSubmitProposal{}, "cosmos-sdk/v1/MsgSubmitProposal")
-	legacy.RegisterAminoMsg(cdc, &MsgDeposit{}, "cosmos-sdk/v1/MsgDeposit")
-	legacy.RegisterAminoMsg(cdc, &MsgVote{}, "cosmos-sdk/v1/MsgVote")
-	legacy.RegisterAminoMsg(cdc, &MsgVoteWeighted{}, "cosmos-sdk/v1/MsgVoteWeighted")
-	legacy.RegisterAminoMsg(cdc, &MsgExecLegacyContent{}, "cosmos-sdk/v1/MsgExecLegacyContent")
+func RegisterLegacyAminoCodec(registrar registry.AminoRegistrar) {
+	legacy.RegisterAminoMsg(registrar, &MsgSubmitProposal{}, "cosmos-sdk/v1/MsgSubmitProposal")
+	legacy.RegisterAminoMsg(registrar, &MsgSubmitMultipleChoiceProposal{}, "gov/MsgSubmitMultipleChoiceProposal")
+	legacy.RegisterAminoMsg(registrar, &MsgDeposit{}, "cosmos-sdk/v1/MsgDeposit")
+	legacy.RegisterAminoMsg(registrar, &MsgVote{}, "cosmos-sdk/v1/MsgVote")
+	legacy.RegisterAminoMsg(registrar, &MsgVoteWeighted{}, "cosmos-sdk/v1/MsgVoteWeighted")
+	legacy.RegisterAminoMsg(registrar, &MsgExecLegacyContent{}, "cosmos-sdk/v1/MsgExecLegacyContent")
+	legacy.RegisterAminoMsg(registrar, &MsgUpdateParams{}, "cosmos-sdk/x/gov/v1/MsgUpdateParams")
+	legacy.RegisterAminoMsg(registrar, &MsgUpdateMessageParams{}, "x/gov/v1/MsgUpdateMessageParams")
+	legacy.RegisterAminoMsg(registrar, &MsgSudoExec{}, "cosmos-sdk/x/gov/v1/MsgSudoExec")
 }
 
-func RegisterInterfaces(registry codectypes.InterfaceRegistry) {
-	registry.RegisterImplementations((*sdk.Msg)(nil),
+// RegisterInterfaces registers the interfaces types with the Interface Registry.
+func RegisterInterfaces(registrar registry.InterfaceRegistrar) {
+	registrar.RegisterImplementations((*coretransaction.Msg)(nil),
 		&MsgSubmitProposal{},
+		&MsgSubmitMultipleChoiceProposal{},
 		&MsgVote{},
 		&MsgVoteWeighted{},
 		&MsgDeposit{},
 		&MsgExecLegacyContent{},
+		&MsgUpdateParams{},
+		&MsgUpdateMessageParams{},
+		&MsgSudoExec{},
 	)
 
-	msgservice.RegisterMsgServiceDesc(registry, &_Msg_serviceDesc)
-}
-
-var (
-	amino     = codec.NewLegacyAmino()
-	ModuleCdc = codec.NewAminoCodec(amino)
-)
-
-func init() {
-	RegisterLegacyAminoCodec(amino)
-	v1beta1.RegisterLegacyAminoCodec(amino)
-	cryptocodec.RegisterCrypto(amino)
-	sdk.RegisterLegacyAminoCodec(amino)
-
-	// Register all Amino interfaces and concrete types on the authz Amino codec so that this can later be
-	// used to properly serialize MsgGrant and MsgExec instances
-	RegisterLegacyAminoCodec(authzcodec.Amino)
+	msgservice.RegisterMsgServiceDesc(registrar, &_Msg_serviceDesc)
 }

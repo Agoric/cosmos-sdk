@@ -7,42 +7,79 @@ import (
 
 	"github.com/spf13/viper"
 	"github.com/stretchr/testify/require"
-	"github.com/tendermint/tendermint/libs/log"
+
+	corectx "cosmossdk.io/core/context"
+	"cosmossdk.io/depinject"
+	"cosmossdk.io/log"
+	banktypes "cosmossdk.io/x/bank/types"
+	"cosmossdk.io/x/staking"
 
 	"github.com/cosmos/cosmos-sdk/client"
 	"github.com/cosmos/cosmos-sdk/client/flags"
-	"github.com/cosmos/cosmos-sdk/server"
-	"github.com/cosmos/cosmos-sdk/simapp"
-	banktypes "github.com/cosmos/cosmos-sdk/x/bank/types"
-	genutiltest "github.com/cosmos/cosmos-sdk/x/genutil/client/testutil"
+	codectestutil "github.com/cosmos/cosmos-sdk/codec/testutil"
+	"github.com/cosmos/cosmos-sdk/testutil/configurator"
+	genutiltest "github.com/cosmos/cosmos-sdk/testutil/x/genutil"
+	"github.com/cosmos/cosmos-sdk/types/module"
+	moduletestutil "github.com/cosmos/cosmos-sdk/types/module/testutil"
+	"github.com/cosmos/cosmos-sdk/x/auth"
 	genutiltypes "github.com/cosmos/cosmos-sdk/x/genutil/types"
 )
 
 func Test_TestnetCmd(t *testing.T) {
+	config := configurator.NewAppConfig(
+		configurator.AccountsModule(),
+		configurator.AuthModule(),
+		configurator.BankModule(),
+		configurator.GenutilModule(),
+		configurator.StakingModule(),
+		configurator.ConsensusModule(),
+		configurator.TxModule(),
+		configurator.ValidateModule(),
+		configurator.MintModule(),
+	)
+	var moduleManager *module.Manager
+	err := depinject.Inject(
+		depinject.Configs(config,
+			depinject.Supply(log.NewNopLogger()),
+		),
+		&moduleManager,
+	)
+	require.NoError(t, err)
+	require.NotNil(t, moduleManager)
+	require.Len(t, moduleManager.Modules, 9) // the registered above + runtime
+
 	home := t.TempDir()
-	encodingConfig := simapp.MakeTestEncodingConfig()
+	cdcOpts := codectestutil.CodecOptions{}
+	encodingConfig := moduletestutil.MakeTestEncodingConfig(cdcOpts, auth.AppModule{}, staking.AppModule{})
 	logger := log.NewNopLogger()
-	cfg, err := genutiltest.CreateDefaultTendermintConfig(home)
+	viper := viper.New()
+	cfg, err := genutiltest.CreateDefaultCometConfig(home)
 	require.NoError(t, err)
 
-	err = genutiltest.ExecInitCmd(simapp.ModuleBasics, home, encodingConfig.Codec)
+	err = genutiltest.ExecInitCmd(moduleManager, home, encodingConfig.Codec)
 	require.NoError(t, err)
 
-	serverCtx := server.NewContext(viper.New(), cfg, logger)
+	err = genutiltest.WriteAndTrackCometConfig(viper, home, cfg)
+	require.NoError(t, err)
 	clientCtx := client.Context{}.
 		WithCodec(encodingConfig.Codec).
 		WithHomeDir(home).
-		WithTxConfig(encodingConfig.TxConfig)
+		WithTxConfig(encodingConfig.TxConfig).
+		WithAddressCodec(cdcOpts.GetAddressCodec()).
+		WithValidatorAddressCodec(cdcOpts.GetValidatorCodec())
 
 	ctx := context.Background()
-	ctx = context.WithValue(ctx, server.ServerContextKey, serverCtx)
+	ctx = context.WithValue(ctx, corectx.ViperContextKey, viper)
+	ctx = context.WithValue(ctx, corectx.LoggerContextKey, logger)
 	ctx = context.WithValue(ctx, client.ClientContextKey, &clientCtx)
-	cmd := testnetInitFilesCmd(simapp.ModuleBasics, banktypes.GenesisBalancesIterator{})
-	cmd.SetArgs([]string{fmt.Sprintf("--%s=test", flags.FlagKeyringBackend), fmt.Sprintf("--output-dir=%s", home)})
+	cmd := testnetInitFilesCmd(moduleManager)
+	cmd.SetArgs(
+		[]string{fmt.Sprintf("--%s=test", flags.FlagKeyringBackend), fmt.Sprintf("--output-dir=%s", home)},
+	)
 	err = cmd.ExecuteContext(ctx)
 	require.NoError(t, err)
 
-	genFile := cfg.GenesisFile()
+	genFile := client.GetConfigFromCmd(cmd).GenesisFile()
 	appState, _, err := genutiltypes.GenesisStateFromGenFile(genFile)
 	require.NoError(t, err)
 

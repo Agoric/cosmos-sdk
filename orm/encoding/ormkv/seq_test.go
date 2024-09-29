@@ -4,17 +4,16 @@ import (
 	"bytes"
 	"testing"
 
-	"github.com/cosmos/cosmos-sdk/orm/encoding/ormkv"
-
 	"gotest.tools/v3/assert"
 	"pgregory.net/rapid"
 
-	"github.com/cosmos/cosmos-sdk/orm/internal/testpb"
+	"cosmossdk.io/orm/encoding/ormkv"
+	"cosmossdk.io/orm/internal/testpb"
 )
 
 func TestSeqCodec(t *testing.T) {
 	rapid.Check(t, func(t *rapid.T) {
-		prefix := rapid.SliceOfN(rapid.Byte(), 0, 5).Draw(t, "prefix").([]byte)
+		prefix := rapid.SliceOfN(rapid.Byte(), 0, 5).Draw(t, "prefix")
 		typ := (&testpb.ExampleTable{}).ProtoReflect().Type()
 		tableName := typ.Descriptor().FullName()
 		cdc := ormkv.NewSeqCodec(typ, prefix)
@@ -27,7 +26,7 @@ func TestSeqCodec(t *testing.T) {
 		assert.NilError(t, err)
 		assert.Equal(t, uint64(0), seq)
 
-		seq = rapid.Uint64().Draw(t, "seq").(uint64)
+		seq = rapid.Uint64().Draw(t, "seq")
 
 		v := cdc.EncodeValue(seq)
 		seq2, err := cdc.DecodeValue(v)

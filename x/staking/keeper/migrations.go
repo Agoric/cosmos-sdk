@@ -1,29 +1,49 @@
 package keeper
 
 import (
-	sdk "github.com/cosmos/cosmos-sdk/types"
-	v043 "github.com/cosmos/cosmos-sdk/x/staking/migrations/v043"
-	v046 "github.com/cosmos/cosmos-sdk/x/staking/migrations/v046"
+	"context"
+
+	v5 "cosmossdk.io/x/staking/migrations/v5"
+	v6 "cosmossdk.io/x/staking/migrations/v6"
+
+	"github.com/cosmos/cosmos-sdk/runtime"
 )
 
 // Migrator is a struct for handling in-place store migrations.
 type Migrator struct {
-	keeper Keeper
+	keeper *Keeper
 }
 
-// NewMigrator returns a new Migrator.
-func NewMigrator(keeper Keeper) Migrator {
+// NewMigrator returns a new Migrator instance.
+func NewMigrator(keeper *Keeper) Migrator {
 	return Migrator{
 		keeper: keeper,
 	}
 }
 
 // Migrate1to2 migrates from version 1 to 2.
-func (m Migrator) Migrate1to2(ctx sdk.Context) error {
-	return v043.MigrateStore(ctx, m.keeper.storeKey)
+func (m Migrator) Migrate1to2(ctx context.Context) error {
+	return nil
 }
 
 // Migrate2to3 migrates x/staking state from consensus version 2 to 3.
-func (m Migrator) Migrate2to3(ctx sdk.Context) error {
-	return v046.MigrateStore(ctx, m.keeper.storeKey, m.keeper.cdc, m.keeper.paramstore)
+func (m Migrator) Migrate2to3(ctx context.Context) error {
+	return nil
+}
+
+// Migrate3to4 migrates x/staking state from consensus version 3 to 4.
+func (m Migrator) Migrate3to4(ctx context.Context) error {
+	return nil
+}
+
+// Migrate4to5 migrates x/staking state from consensus version 4 to 5.
+func (m Migrator) Migrate4to5(ctx context.Context) error {
+	store := runtime.KVStoreAdapter(m.keeper.KVStoreService.OpenKVStore(ctx))
+	return v5.MigrateStore(ctx, store, m.keeper.cdc, m.keeper.Logger)
+}
+
+// Migrate5to6 migrates x/staking state from consensus version 5 to 6.
+func (m Migrator) Migrate5to6(ctx context.Context) error {
+	store := runtime.KVStoreAdapter(m.keeper.KVStoreService.OpenKVStore(ctx))
+	return v6.MigrateStore(ctx, store, m.keeper.cdc)
 }

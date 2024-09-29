@@ -2,109 +2,93 @@ package keeper_test
 
 import (
 	gocontext "context"
-	"testing"
 	"time"
 
-	"github.com/stretchr/testify/suite"
-	tmproto "github.com/tendermint/tendermint/proto/tendermint/types"
+	"cosmossdk.io/x/slashing/testutil"
+	slashingtypes "cosmossdk.io/x/slashing/types"
 
-	"github.com/cosmos/cosmos-sdk/baseapp"
-	"github.com/cosmos/cosmos-sdk/simapp"
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	"github.com/cosmos/cosmos-sdk/types/query"
-	authtypes "github.com/cosmos/cosmos-sdk/x/auth/types"
-	banktypes "github.com/cosmos/cosmos-sdk/x/bank/types"
-	"github.com/cosmos/cosmos-sdk/x/slashing/testslashing"
-	"github.com/cosmos/cosmos-sdk/x/slashing/types"
 )
 
-type SlashingTestSuite struct {
-	suite.Suite
+func (s *KeeperTestSuite) TestGRPCQueryParams() {
+	queryClient := s.queryClient
+	require := s.Require()
 
-	app         *simapp.SimApp
-	ctx         sdk.Context
-	queryClient types.QueryClient
-	addrDels    []sdk.AccAddress
+	paramsResp, err := queryClient.Params(gocontext.Background(), &slashingtypes.QueryParamsRequest{})
+
+	require.NoError(err)
+	require.Equal(testutil.TestParams(), paramsResp.Params)
 }
 
-func (suite *SlashingTestSuite) SetupTest() {
-	app := simapp.Setup(suite.T(), false)
-	ctx := app.BaseApp.NewContext(false, tmproto.Header{})
+func (s *KeeperTestSuite) TestGRPCSigningInfo() {
+	queryClient, ctx, keeper := s.queryClient, s.ctx, s.slashingKeeper
+	require := s.Require()
 
-	app.AccountKeeper.SetParams(ctx, authtypes.DefaultParams())
-	app.BankKeeper.SetParams(ctx, banktypes.DefaultParams())
-	app.SlashingKeeper.SetParams(ctx, testslashing.TestParams())
+	infoResp, err := queryClient.SigningInfo(gocontext.Background(), &slashingtypes.QuerySigningInfoRequest{ConsAddress: ""})
+	require.Error(err)
+	require.ErrorContains(err, "invalid request")
+	require.Nil(infoResp)
 
-	addrDels := simapp.AddTestAddrsIncremental(app, ctx, 2, app.StakingKeeper.TokensFromConsensusPower(ctx, 200))
+	consStr, err := s.stakingKeeper.ConsensusAddressCodec().BytesToString(consAddr)
+	require.NoError(err)
 
-	info1 := types.NewValidatorSigningInfo(sdk.ConsAddress(addrDels[0]), int64(4), int64(3),
-		time.Unix(2, 0), false, int64(10))
-	info2 := types.NewValidatorSigningInfo(sdk.ConsAddress(addrDels[1]), int64(5), int64(4),
-		time.Unix(2, 0), false, int64(10))
+	signingInfo := slashingtypes.NewValidatorSigningInfo(
+		consStr,
+		0,
+		time.Unix(2, 0),
+		false,
+		int64(0),
+	)
 
-	app.SlashingKeeper.SetValidatorSigningInfo(ctx, sdk.ConsAddress(addrDels[0]), info1)
-	app.SlashingKeeper.SetValidatorSigningInfo(ctx, sdk.ConsAddress(addrDels[1]), info2)
-
-	suite.app = app
-	suite.ctx = ctx
-	suite.addrDels = addrDels
-
-	queryHelper := baseapp.NewQueryServerTestHelper(ctx, app.InterfaceRegistry())
-	types.RegisterQueryServer(queryHelper, app.SlashingKeeper)
-	queryClient := types.NewQueryClient(queryHelper)
-	suite.queryClient = queryClient
-}
-
-func (suite *SlashingTestSuite) TestGRPCQueryParams() {
-	queryClient := suite.queryClient
-	paramsResp, err := queryClient.Params(gocontext.Background(), &types.QueryParamsRequest{})
-
-	suite.NoError(err)
-	suite.Equal(testslashing.TestParams(), paramsResp.Params)
-}
-
-func (suite *SlashingTestSuite) TestGRPCSigningInfo() {
-	queryClient := suite.queryClient
-
-	infoResp, err := queryClient.SigningInfo(gocontext.Background(), &types.QuerySigningInfoRequest{ConsAddress: ""})
-	suite.Error(err)
-	suite.Nil(infoResp)
-
-	consAddr := sdk.ConsAddress(suite.addrDels[0])
-	info, found := suite.app.SlashingKeeper.GetValidatorSigningInfo(suite.ctx, consAddr)
-	suite.True(found)
+	require.NoError(keeper.ValidatorSigningInfo.Set(ctx, consAddr, signingInfo))
+	info, err := keeper.ValidatorSigningInfo.Get(ctx, consAddr)
+	require.NoError(err)
 
 	infoResp, err = queryClient.SigningInfo(gocontext.Background(),
-		&types.QuerySigningInfoRequest{ConsAddress: consAddr.String()})
-	suite.NoError(err)
-	suite.Equal(info, infoResp.ValSigningInfo)
+		&slashingtypes.QuerySigningInfoRequest{ConsAddress: consStr})
+	require.NoError(err)
+	require.Equal(info, infoResp.ValSigningInfo)
 }
 
-func (suite *SlashingTestSuite) TestGRPCSigningInfos() {
-	queryClient := suite.queryClient
+func (s *KeeperTestSuite) TestGRPCSigningInfos() {
+	queryClient, ctx, keeper := s.queryClient, s.ctx, s.slashingKeeper
+	require := s.Require()
 
-	var signingInfos []types.ValidatorSigningInfo
+	// set two validator signing information
+	consAddr1 := sdk.ConsAddress("addr1_______________")
+	consStr1, err := s.stakingKeeper.ConsensusAddressCodec().BytesToString(consAddr1)
+	require.NoError(err)
+	consAddr2 := sdk.ConsAddress("addr2_______________")
+	signingInfo := slashingtypes.NewValidatorSigningInfo(
+		consStr1,
+		0,
+		time.Unix(2, 0),
+		false,
+		int64(0),
+	)
 
-	suite.app.SlashingKeeper.IterateValidatorSigningInfos(suite.ctx, func(consAddr sdk.ConsAddress, info types.ValidatorSigningInfo) (stop bool) {
+	require.NoError(keeper.ValidatorSigningInfo.Set(ctx, consAddr1, signingInfo))
+	signingInfo.Address = string(consAddr2)
+	require.NoError(keeper.ValidatorSigningInfo.Set(ctx, consAddr2, signingInfo))
+	var signingInfos []slashingtypes.ValidatorSigningInfo
+
+	err = keeper.ValidatorSigningInfo.Walk(ctx, nil, func(consAddr sdk.ConsAddress, info slashingtypes.ValidatorSigningInfo) (stop bool, err error) {
 		signingInfos = append(signingInfos, info)
-		return false
+		return false, nil
 	})
-
+	require.NoError(err)
 	// verify all values are returned without pagination
 	infoResp, err := queryClient.SigningInfos(gocontext.Background(),
-		&types.QuerySigningInfosRequest{Pagination: nil})
-	suite.NoError(err)
-	suite.Equal(signingInfos, infoResp.Info)
+		&slashingtypes.QuerySigningInfosRequest{Pagination: nil})
+	require.NoError(err)
+	require.Equal(signingInfos, infoResp.Info)
 
 	infoResp, err = queryClient.SigningInfos(gocontext.Background(),
-		&types.QuerySigningInfosRequest{Pagination: &query.PageRequest{Limit: 1, CountTotal: true}})
-	suite.NoError(err)
-	suite.Len(infoResp.Info, 1)
-	suite.Equal(signingInfos[0], infoResp.Info[0])
-	suite.NotNil(infoResp.Pagination.NextKey)
-	suite.Equal(uint64(2), infoResp.Pagination.Total)
-}
-
-func TestSlashingTestSuite(t *testing.T) {
-	suite.Run(t, new(SlashingTestSuite))
+		&slashingtypes.QuerySigningInfosRequest{Pagination: &query.PageRequest{Limit: 1, CountTotal: true}})
+	require.NoError(err)
+	require.Len(infoResp.Info, 1)
+	require.Equal(signingInfos[0], infoResp.Info[0])
+	require.NotNil(infoResp.Pagination.NextKey)
+	require.Equal(uint64(2), infoResp.Pagination.Total)
 }

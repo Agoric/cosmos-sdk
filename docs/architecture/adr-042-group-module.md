@@ -22,13 +22,11 @@ The legacy amino multi-signature mechanism of the Cosmos SDK has certain limitat
 * It requires `legacy_amino` sign mode ([#8141](https://github.com/cosmos/cosmos-sdk/issues/8141)).
 
 While the group module is not meant to be a total replacement for the current multi-signature accounts, it provides a solution to the limitations described above, with a more flexible key management system where keys can be added, updated or removed, as well as configurable thresholds.
-It's meant to be used with other access control modules such as [`x/feegrant`](./adr-029-fee-grant-module.md) ans [`x/authz`](adr-030-authz-module.md) to simplify key management for individuals and organizations.
-
-The proof of concept of the group module can be found in https://github.com/regen-network/regen-ledger/tree/master/proto/regen/group/v1alpha1 and https://github.com/regen-network/regen-ledger/tree/master/x/group.
+It's meant to be used with other access control modules such as [`x/feegrant`](./adr-029-fee-grant-module.md) and [`x/authz`](adr-030-authz-module.md) to simplify key management for individuals and organizations.
 
 ## Decision
 
-We propose merging the `x/group` module with its supporting [ORM/Table Store package](https://github.com/regen-network/regen-ledger/tree/master/orm) ([#7098](https://github.com/cosmos/cosmos-sdk/issues/7098)) into the Cosmos SDK and continuing development here. There will be a dedicated ADR for the ORM package.
+We propose merging the `x/group` module with its supporting ORM/Table Store package ([#7098](https://github.com/cosmos/cosmos-sdk/issues/7098)) into the Cosmos SDK and continuing development here. There will be a dedicated ADR for the ORM package.
 
 ### Group
 
@@ -40,7 +38,7 @@ Group members can create proposals and vote on them through group accounts using
 It has an `admin` account which can manage members in the group, update the group
 metadata and set a new admin.
 
-```proto
+```protobuf
 message GroupInfo {
 
     // group_id is the unique ID of this group.
@@ -63,7 +61,7 @@ message GroupInfo {
 }
 ```
 
-```proto
+```protobuf
 message GroupMember {
 
     // group_id is the unique ID of the group.
@@ -102,7 +100,7 @@ and then to create separate group accounts with different decision policies
 and delegate the desired permissions from the master account to
 those "sub-accounts" using the [`x/authz` module](adr-030-authz-module.md).
 
-```proto
+```protobuf
 message GroupAccountInfo {
 
     // address is the group account address.
@@ -122,7 +120,7 @@ message GroupAccountInfo {
     uint64 version = 5;
 
     // decision_policy specifies the group account's decision policy.
-    google.protobuf.Any decision_policy = 6 [(cosmos_proto.accepts_interface) = "DecisionPolicy"];
+    google.protobuf.Any decision_policy = 6 [(cosmos_proto.accepts_interface) = "cosmos.group.v1.DecisionPolicy"];
 }
 ```
 
@@ -167,7 +165,7 @@ A threshold decision policy defines a minimum support votes (_yes_), based on a 
 of voter weights, for a proposal to pass. For
 this decision policy, abstain and veto are treated as no support (_no_).
 
-```proto
+```protobuf
 message ThresholdDecisionPolicy {
 
     // threshold is the minimum weighted sum of support votes for a proposal to succeed.
@@ -191,7 +189,7 @@ Internally, a proposal also tracks:
 * its `Result`: unfinalized, accepted or rejected
 * its `VoteState` in the form of a `Tally`, which is calculated on new votes and when executing the proposal.
 
-```proto
+```protobuf
 // Tally represents the sum of weighted votes.
 message Tally {
     option (gogoproto.goproto_getters) = false;

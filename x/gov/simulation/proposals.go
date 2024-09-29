@@ -1,31 +1,18 @@
 package simulation
 
 import (
+	"context"
 	"math/rand"
 
-	simappparams "github.com/cosmos/cosmos-sdk/simapp/params"
-	sdk "github.com/cosmos/cosmos-sdk/types"
+	"cosmossdk.io/x/gov/types/v1beta1"
+
 	simtypes "github.com/cosmos/cosmos-sdk/types/simulation"
-	"github.com/cosmos/cosmos-sdk/x/gov/types/v1beta1"
-	"github.com/cosmos/cosmos-sdk/x/simulation"
 )
 
-// OpWeightSubmitTextProposal app params key for text proposal
-const OpWeightSubmitTextProposal = "op_weight_submit_text_proposal"
-
-// ProposalContents defines the module weighted proposals' contents
-func ProposalContents() []simtypes.WeightedProposalContent {
-	return []simtypes.WeightedProposalContent{
-		simulation.NewWeightedProposalContent(
-			OpWeightMsgDeposit,
-			simappparams.DefaultWeightTextProposal,
-			SimulateTextProposalContent,
-		),
-	}
-}
-
-// SimulateTextProposalContent returns a random text proposal content.
-func SimulateTextProposalContent(r *rand.Rand, _ sdk.Context, _ []simtypes.Account) simtypes.Content {
+// SimulateLegacyTextProposalContent returns a random text proposal content.
+//
+//nolint:staticcheck // used for legacy testing
+func SimulateLegacyTextProposalContent(r *rand.Rand, _ context.Context, _ []simtypes.Account) simtypes.Content {
 	return v1beta1.NewTextProposal(
 		simtypes.RandStringOfLength(r, 140),
 		simtypes.RandStringOfLength(r, 5000),

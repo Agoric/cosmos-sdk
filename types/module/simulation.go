@@ -6,36 +6,49 @@ import (
 	"sort"
 	"time"
 
+	"cosmossdk.io/core/address"
+	"cosmossdk.io/core/appmodule"
 	sdkmath "cosmossdk.io/math"
+
+	"github.com/cosmos/cosmos-sdk/client"
 	"github.com/cosmos/cosmos-sdk/codec"
-	sdk "github.com/cosmos/cosmos-sdk/types"
 	"github.com/cosmos/cosmos-sdk/types/simulation"
 )
 
 // AppModuleSimulation defines the standard functions that every module should expose
 // for the SDK blockchain simulator
 type AppModuleSimulation interface {
-	// randomized genesis states
+	// GenerateGenesisState randomized genesis states
 	GenerateGenesisState(input *SimulationState)
 
-	// content functions used to simulate governance proposals
-	ProposalContents(simState SimulationState) []simulation.WeightedProposalContent
-
-	// randomized module parameters for param change proposals
-	RandomizedParams(r *rand.Rand) []simulation.ParamChange
-
-	// register a func to decode the each module's defined types from their corresponding store key
-	RegisterStoreDecoder(sdk.StoreDecoderRegistry)
-
-	// simulation operations (i.e msgs) with their respective weight
-	WeightedOperations(simState SimulationState) []simulation.WeightedOperation
+	// RegisterStoreDecoder register a func to decode the each module's defined types from their corresponding store key
+	RegisterStoreDecoder(simulation.StoreDecoderRegistry)
 }
+type (
+	HasLegacyWeightedOperations interface {
+		// WeightedOperations simulation operations (i.e msgs) with their respective weight
+		WeightedOperations(simState SimulationState) []simulation.WeightedOperation
+	}
+	// HasLegacyProposalMsgs defines the messages that can be used to simulate governance (v1) proposals
+	// Deprecated replaced by HasProposalMsgsX
+	HasLegacyProposalMsgs interface {
+		// ProposalMsgs msg functions used to simulate governance proposals
+		ProposalMsgs(simState SimulationState) []simulation.WeightedProposalMsg
+	}
+
+	// HasLegacyProposalContents defines the contents that can be used to simulate legacy governance (v1beta1) proposals
+	// Deprecated replaced by HasProposalMsgsX
+	HasLegacyProposalContents interface {
+		// ProposalContents content functions used to simulate governance proposals
+		ProposalContents(simState SimulationState) []simulation.WeightedProposalContent //nolint:staticcheck // legacy v1beta1 governance
+	}
+)
 
 // SimulationManager defines a simulation manager that provides the high level utility
 // for managing and executing simulation functionalities for a group of modules
 type SimulationManager struct {
-	Modules       []AppModuleSimulation    // array of app modules; we use an array for deterministic simulation tests
-	StoreDecoders sdk.StoreDecoderRegistry // functions to decode the key-value pairs from each module's store
+	Modules       []AppModuleSimulation           // array of app modules; we use an array for deterministic simulation tests
+	StoreDecoders simulation.StoreDecoderRegistry // functions to decode the key-value pairs from each module's store
 }
 
 // NewSimulationManager creates a new SimulationManager object
@@ -44,7 +57,7 @@ type SimulationManager struct {
 func NewSimulationManager(modules ...AppModuleSimulation) *SimulationManager {
 	return &SimulationManager{
 		Modules:       modules,
-		StoreDecoders: make(sdk.StoreDecoderRegistry),
+		StoreDecoders: make(simulation.StoreDecoderRegistry),
 	}
 }
 
@@ -54,15 +67,14 @@ func NewSimulationManager(modules ...AppModuleSimulation) *SimulationManager {
 // with the same moduleName.
 // Then it attempts to cast every provided AppModule into an AppModuleSimulation.
 // If the cast succeeds, its included, otherwise it is excluded.
-func NewSimulationManagerFromAppModules(modules map[string]AppModule, overrideModules map[string]AppModuleSimulation) *SimulationManager {
-	simModules := []AppModuleSimulation{}
+func NewSimulationManagerFromAppModules(modules map[string]appmodule.AppModule, overrideModules map[string]AppModuleSimulation) *SimulationManager {
 	appModuleNamesSorted := make([]string, 0, len(modules))
 	for moduleName := range modules {
 		appModuleNamesSorted = append(appModuleNamesSorted, moduleName)
 	}
-
 	sort.Strings(appModuleNamesSorted)
 
+	var simModules []AppModuleSimulation
 	for _, moduleName := range appModuleNamesSorted {
 		// for every module, see if we override it. If so, use override.
 		// Else, if we can cast the app module into a simulation module add it.
@@ -80,12 +92,15 @@ func NewSimulationManagerFromAppModules(modules map[string]AppModule, overrideMo
 	return NewSimulationManager(simModules...)
 }
 
+// Deprecated: Use GetProposalMsgs instead.
 // GetProposalContents returns each module's proposal content generator function
 // with their default operation weight and key.
 func (sm *SimulationManager) GetProposalContents(simState SimulationState) []simulation.WeightedProposalContent {
 	wContents := make([]simulation.WeightedProposalContent, 0, len(sm.Modules))
 	for _, module := range sm.Modules {
-		wContents = append(wContents, module.ProposalContents(simState)...)
+		if module, ok := module.(HasLegacyProposalContents); ok {
+			wContents = append(wContents, module.ProposalContents(simState)...)
+		}
 	}
 
 	return wContents
@@ -106,40 +121,21 @@ func (sm *SimulationManager) GenerateGenesisStates(simState *SimulationState) {
 	}
 }
 
-// GenerateParamChanges generates randomized contents for creating params change
-// proposal transactions
-func (sm *SimulationManager) GenerateParamChanges(seed int64) (paramChanges []simulation.ParamChange) {
-	r := rand.New(rand.NewSource(seed))
-
-	for _, module := range sm.Modules {
-		paramChanges = append(paramChanges, module.RandomizedParams(r)...)
-	}
-
-	return
-}
-
-// WeightedOperations returns all the modules' weighted operations of an application
-func (sm *SimulationManager) WeightedOperations(simState SimulationState) []simulation.WeightedOperation {
-	wOps := make([]simulation.WeightedOperation, 0, len(sm.Modules))
-	for _, module := range sm.Modules {
-		wOps = append(wOps, module.WeightedOperations(simState)...)
-	}
-
-	return wOps
-}
-
 // SimulationState is the input parameters used on each of the module's randomized
 // GenesisState generator function
 type SimulationState struct {
-	AppParams    simulation.AppParams
-	Cdc          codec.JSONCodec                      // application codec
-	Rand         *rand.Rand                           // random number
-	GenState     map[string]json.RawMessage           // genesis state
-	Accounts     []simulation.Account                 // simulation accounts
-	InitialStake sdkmath.Int                          // initial coins per account
-	NumBonded    int64                                // number of initially bonded accounts
-	GenTimestamp time.Time                            // genesis timestamp
-	UnbondTime   time.Duration                        // staking unbond time stored to use it as the slashing maximum evidence duration
-	ParamChanges []simulation.ParamChange             // simulated parameter changes from modules
-	Contents     []simulation.WeightedProposalContent // proposal content generator functions with their default weight and app sim key
+	AppParams         simulation.AppParams
+	Cdc               codec.JSONCodec                // application codec
+	AddressCodec      address.Codec                  // address codec
+	ValidatorCodec    address.Codec                  // validator address codec
+	TxConfig          client.TxConfig                // Shared TxConfig; this is expensive to create and stateless, so create it once up front.
+	Rand              *rand.Rand                     // random number
+	GenState          map[string]json.RawMessage     // genesis state
+	Accounts          []simulation.Account           // simulation accounts
+	InitialStake      sdkmath.Int                    // initial coins per account
+	NumBonded         int64                          // number of initially bonded accounts
+	BondDenom         string                         // denom to be used as default
+	GenTimestamp      time.Time                      // genesis timestamp
+	UnbondTime        time.Duration                  // staking unbond time stored to use it as the slashing maximum evidence duration
+	LegacyParamChange []simulation.LegacyParamChange // simulated parameter changes from modules
 }

@@ -3,14 +3,17 @@ package types
 import (
 	"encoding/json"
 	"io"
-	"time"
 
-	"github.com/gogo/protobuf/grpc"
-	"github.com/spf13/cobra"
-	abci "github.com/tendermint/tendermint/abci/types"
-	"github.com/tendermint/tendermint/libs/log"
-	tmtypes "github.com/tendermint/tendermint/types"
-	dbm "github.com/tendermint/tm-db"
+	cmtproto "github.com/cometbft/cometbft/api/cometbft/types/v1"
+	cmtcrypto "github.com/cometbft/cometbft/crypto"
+	cmttypes "github.com/cometbft/cometbft/types"
+	"github.com/cosmos/gogoproto/grpc"
+
+	"cosmossdk.io/core/server"
+	corestore "cosmossdk.io/core/store"
+	"cosmossdk.io/log"
+	"cosmossdk.io/store/snapshots"
+	storetypes "cosmossdk.io/store/types"
 
 	"github.com/cosmos/cosmos-sdk/client"
 	"github.com/cosmos/cosmos-sdk/server/api"
@@ -18,10 +21,6 @@ import (
 	"github.com/cosmos/cosmos-sdk/snapshots"
 	sdk "github.com/cosmos/cosmos-sdk/types"
 )
-
-// ServerStartTime defines the time duration that the server need to stay running after startup
-// for the startup be considered successful
-const ServerStartTime = 5 * time.Second
 
 type (
 	// AppOptions defines an interface that is passed into an application
@@ -31,15 +30,13 @@ type (
 	// literal defined on the server Context. Note, casting Get calls may not yield
 	// the expected types and could result in type assertion errors. It is recommend
 	// to either use the cast package or perform manual conversion for safety.
-	AppOptions interface {
-		Get(string) interface{}
-	}
+	AppOptions = server.DynamicConfig
 
 	// Application defines an application interface that wraps abci.Application.
 	// The interface defines the necessary contracts to be implemented in order
 	// to fully bootstrap and start an application.
 	Application interface {
-		abci.Application
+		ABCI
 
 		RegisterAPIRoutes(*api.Server, config.APIConfig)
 
@@ -51,35 +48,29 @@ type (
 		// simulation, fetching txs by hash...).
 		RegisterTxService(client.Context)
 
-		// RegisterTendermintService registers the gRPC Query service for tendermint queries.
+		// RegisterTendermintService registers the gRPC Query service for CometBFT queries.
 		RegisterTendermintService(client.Context)
 
-		// Return the multistore instance
-		CommitMultiStore() sdk.CommitMultiStore
+		// RegisterNodeService registers the node gRPC Query service.
+		RegisterNodeService(client.Context, config.Config)
 
-		// Return the snapshot manager
+		// CommitMultiStore return the multistore instance
+		CommitMultiStore() storetypes.CommitMultiStore
+
+		// SnapshotManager return the snapshot manager
 		SnapshotManager() *snapshots.Manager
 
-		// Close is called in start cmd to gracefully cleanup resources.
-		Close() error
-	}
+		// ValidatorKeyProvider returns a function that generates a validator key
+		ValidatorKeyProvider() func() (cmtcrypto.PrivKey, error)
 
-	// ApplicationQueryService defines an extension of the Application interface
-	// that facilitates gRPC query Services.
-	//
-	// NOTE: This interfaces exists only in the v0.46.x line to ensure the existing
-	// Application interface does not introduce API breaking changes.
-	ApplicationQueryService interface {
-		// RegisterNodeService registers the node gRPC Query service.
-		RegisterNodeService(client.Context)
+		// Close is called in start cmd to gracefully cleanup resources.
+		// Must be safe to be called multiple times.
+		Close() error
 	}
 
 	// AppCreator is a function that allows us to lazily initialize an
 	// application using various configurations.
-	AppCreator func(log.Logger, dbm.DB, io.Writer, AppOptions) Application
-
-	// ModuleInitFlags takes a start command and adds modules specific init flags.
-	ModuleInitFlags func(startCmd *cobra.Command)
+	AppCreator[T Application] func(log.Logger, corestore.KVStoreWithBatch, io.Writer, AppOptions) T
 
 	// ExportedApp represents an exported app state, along with
 	// validators, consensus params and latest app height.
@@ -87,14 +78,23 @@ type (
 		// AppState is the application state as JSON.
 		AppState json.RawMessage
 		// Validators is the exported validator set.
-		Validators []tmtypes.GenesisValidator
+		Validators []cmttypes.GenesisValidator
 		// Height is the app's latest block height.
 		Height int64
 		// ConsensusParams are the exported consensus params for ABCI.
-		ConsensusParams *abci.ConsensusParams
+		ConsensusParams cmtproto.ConsensusParams
 	}
 
 	// AppExporter is a function that dumps all app state to
 	// JSON-serializable structure and returns the current validator set.
-	AppExporter func(log.Logger, dbm.DB, io.Writer, int64, bool, []string, AppOptions) (ExportedApp, error)
+	AppExporter func(
+		logger log.Logger,
+		db corestore.KVStoreWithBatch,
+		traceWriter io.Writer,
+		height int64,
+		forZeroHeight bool,
+		jailAllowedAddrs []string,
+		opts AppOptions,
+		modulesToExport []string,
+	) (ExportedApp, error)
 )

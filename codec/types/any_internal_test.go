@@ -3,12 +3,12 @@ package types
 import (
 	"testing"
 
-	"github.com/gogo/protobuf/proto"
+	"github.com/cosmos/gogoproto/proto"
 	"github.com/stretchr/testify/require"
 )
 
 type Dog struct {
-	Name string `protobuf:"bytes,1,opt,name=size,proto3" json:"size,omitempty"`
+	Name string `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
 }
 
 func (d Dog) Greet() string { return d.Name }
@@ -48,7 +48,7 @@ func TestAnyPackUnpack(t *testing.T) {
 	require.Equal(t, spot, animal)
 
 	// without cache
-	any.cachedValue = nil
+	any.ResetCachedValue()
 	err = registry.UnpackAny(any, &animal)
 	require.NoError(t, err)
 	require.Equal(t, spot, animal)

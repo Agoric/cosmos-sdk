@@ -3,64 +3,76 @@ package codec_test
 import (
 	"testing"
 
+	"github.com/cosmos/gogoproto/types/any/test"
 	"github.com/stretchr/testify/require"
 
 	"github.com/cosmos/cosmos-sdk/codec"
-	"github.com/cosmos/cosmos-sdk/codec/types"
+	codectestutil "github.com/cosmos/cosmos-sdk/codec/testutil"
 	codectypes "github.com/cosmos/cosmos-sdk/codec/types"
 	"github.com/cosmos/cosmos-sdk/crypto/keys/ed25519"
 	cryptotypes "github.com/cosmos/cosmos-sdk/crypto/types"
-	"github.com/cosmos/cosmos-sdk/simapp"
-	"github.com/cosmos/cosmos-sdk/testutil/testdata"
+	"github.com/cosmos/cosmos-sdk/types/module/testutil"
 )
 
-func NewTestInterfaceRegistry() types.InterfaceRegistry {
-	registry := types.NewInterfaceRegistry()
-	registry.RegisterInterface("Animal", (*testdata.Animal)(nil))
+func NewTestInterfaceRegistry() codectypes.InterfaceRegistry {
+	registry := codectypes.NewInterfaceRegistry()
+	registry.RegisterInterface("Animal", (*test.Animal)(nil))
 	registry.RegisterImplementations(
-		(*testdata.Animal)(nil),
-		&testdata.Dog{},
-		&testdata.Cat{},
+		(*test.Animal)(nil),
+		&test.Dog{},
+		&test.Cat{},
 	)
 	return registry
 }
 
 func TestMarshalAny(t *testing.T) {
-	registry := types.NewInterfaceRegistry()
+	catRegistry := codectypes.NewInterfaceRegistry()
+	catRegistry.RegisterImplementations((*test.Animal)(nil), &test.Cat{})
+
+	registry := codectypes.NewInterfaceRegistry()
 
 	cdc := codec.NewProtoCodec(registry)
 
-	kitty := &testdata.Cat{Moniker: "Kitty"}
-	bz, err := cdc.MarshalInterface(kitty)
+	kitty := &test.Cat{Moniker: "Kitty"}
+	emptyBz, err := cdc.MarshalInterface(kitty)
+	require.ErrorContains(t, err, "does not have a registered interface")
+
+	catBz, err := codec.NewProtoCodec(catRegistry).MarshalInterface(kitty)
+	require.NoError(t, err)
+	require.NotEmpty(t, catBz)
+
+	var animal test.Animal
+
+	// deserializing cat bytes should error in an empty registry
+	err = cdc.UnmarshalInterface(catBz, &animal)
+	require.ErrorContains(t, err, "no registered implementations of type test.Animal")
+
+	// deserializing an empty byte array will return nil, but no error
+	err = cdc.UnmarshalInterface(emptyBz, &animal)
+	require.Nil(t, animal)
 	require.NoError(t, err)
 
-	var animal testdata.Animal
-
-	// empty registry should fail
-	err = cdc.UnmarshalInterface(bz, &animal)
-	require.Error(t, err)
-
 	// wrong type registration should fail
-	registry.RegisterImplementations((*testdata.Animal)(nil), &testdata.Dog{})
-	err = cdc.UnmarshalInterface(bz, &animal)
+	registry.RegisterImplementations((*test.Animal)(nil), &test.Dog{})
+	err = cdc.UnmarshalInterface(catBz, &animal)
 	require.Error(t, err)
 
 	// should pass
 	registry = NewTestInterfaceRegistry()
 	cdc = codec.NewProtoCodec(registry)
-	err = cdc.UnmarshalInterface(bz, &animal)
+	err = cdc.UnmarshalInterface(catBz, &animal)
 	require.NoError(t, err)
 	require.Equal(t, kitty, animal)
 
 	// nil should fail
-	registry = NewTestInterfaceRegistry()
-	err = cdc.UnmarshalInterface(bz, nil)
+	_ = NewTestInterfaceRegistry()
+	err = cdc.UnmarshalInterface(catBz, nil)
 	require.Error(t, err)
 }
 
 func TestMarshalProtoPubKey(t *testing.T) {
 	require := require.New(t)
-	ccfg := simapp.MakeTestEncodingConfig()
+	ccfg := testutil.MakeTestEncodingConfig(codectestutil.CodecOptions{})
 	privKey := ed25519.GenPrivKey()
 	pk := privKey.PubKey()
 
@@ -100,7 +112,7 @@ func TestMarshalProtoPubKey(t *testing.T) {
 // helper functions
 func TestMarshalProtoInterfacePubKey(t *testing.T) {
 	require := require.New(t)
-	ccfg := simapp.MakeTestEncodingConfig()
+	ccfg := testutil.MakeTestEncodingConfig(codectestutil.CodecOptions{})
 	privKey := ed25519.GenPrivKey()
 	pk := privKey.PubKey()
 

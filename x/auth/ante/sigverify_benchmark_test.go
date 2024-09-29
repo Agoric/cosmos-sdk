@@ -1,10 +1,10 @@
 package ante_test
 
 import (
+	crand "crypto/rand"
 	"testing"
 
 	"github.com/stretchr/testify/require"
-	tmcrypto "github.com/tendermint/tendermint/crypto"
 
 	"github.com/cosmos/cosmos-sdk/crypto/keys/secp256k1"
 	"github.com/cosmos/cosmos-sdk/crypto/keys/secp256r1"
@@ -13,7 +13,7 @@ import (
 // This benchmark is used to asses the ante.Secp256k1ToR1GasFactor value
 func BenchmarkSig(b *testing.B) {
 	require := require.New(b)
-	msg := tmcrypto.CRandBytes(1000)
+	msg := cRandBytes(1000)
 
 	skK := secp256k1.GenPrivKey()
 	pkK := skK.PubKey()
@@ -41,4 +41,22 @@ func BenchmarkSig(b *testing.B) {
 			require.True(ok)
 		}
 	})
+}
+
+// randBytes generates a random byte slice of the specified length.
+//
+// It takes an integer parameter representing the number of bytes to generate.
+// Returns a byte slice.
+func randBytes(numBytes int) []byte {
+	b := make([]byte, numBytes)
+	_, err := crand.Read(b)
+	if err != nil {
+		panic(err)
+	}
+	return b
+}
+
+// This only uses the OS's randomness
+func cRandBytes(numBytes int) []byte {
+	return randBytes(numBytes)
 }

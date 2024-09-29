@@ -7,31 +7,43 @@ import (
 	"cosmossdk.io/math"
 	"github.com/stretchr/testify/require"
 	"github.com/stretchr/testify/suite"
-	tmproto "github.com/tendermint/tendermint/proto/tendermint/types"
+
+	"cosmossdk.io/math"
+	"cosmossdk.io/store/prefix"
+	storetypes "cosmossdk.io/store/types"
+	"cosmossdk.io/x/params"
+	"cosmossdk.io/x/params/keeper"
+	"cosmossdk.io/x/params/types"
+	"cosmossdk.io/x/params/types/proposal"
 
 	"github.com/cosmos/cosmos-sdk/baseapp"
-	"github.com/cosmos/cosmos-sdk/simapp"
-	"github.com/cosmos/cosmos-sdk/store/prefix"
+	codectestutil "github.com/cosmos/cosmos-sdk/codec/testutil"
+	"github.com/cosmos/cosmos-sdk/testutil"
 	sdk "github.com/cosmos/cosmos-sdk/types"
-	"github.com/cosmos/cosmos-sdk/x/params/types"
-	"github.com/cosmos/cosmos-sdk/x/params/types/proposal"
+	moduletestutil "github.com/cosmos/cosmos-sdk/types/module/testutil"
 )
 
 type KeeperTestSuite struct {
 	suite.Suite
 
-	app *simapp.SimApp
-	ctx sdk.Context
-
-	queryClient proposal.QueryClient
+	ctx          sdk.Context
+	paramsKeeper keeper.Keeper
+	queryClient  proposal.QueryClient
 }
 
 func (suite *KeeperTestSuite) SetupTest() {
-	suite.app = simapp.Setup(suite.T(), false)
-	suite.ctx = suite.app.BaseApp.NewContext(false, tmproto.Header{})
+	encodingCfg := moduletestutil.MakeTestEncodingConfig(codectestutil.CodecOptions{}, params.AppModule{})
+	key := storetypes.NewKVStoreKey(types.StoreKey)
+	tkey := storetypes.NewTransientStoreKey("params_transient_test")
 
-	queryHelper := baseapp.NewQueryServerTestHelper(suite.ctx, suite.app.InterfaceRegistry())
-	proposal.RegisterQueryServer(queryHelper, suite.app.ParamsKeeper)
+	suite.ctx = testutil.DefaultContext(key, tkey)
+	suite.paramsKeeper = keeper.NewKeeper(encodingCfg.Codec, encodingCfg.Amino, key, tkey)
+	suite.paramsKeeper.Subspace("bank")
+	suite.paramsKeeper.Subspace("staking")
+
+	queryHelper := baseapp.NewQueryServerTestHelper(suite.ctx, encodingCfg.InterfaceRegistry)
+	proposal.RegisterQueryServer(queryHelper, suite.paramsKeeper)
+
 	suite.queryClient = proposal.NewQueryClient(queryHelper)
 }
 
@@ -77,13 +89,11 @@ func TestKeeper(t *testing.T) {
 
 	// Set params
 	for i, kv := range kvs {
-		kv := kv
 		require.NotPanics(t, func() { space.Set(ctx, []byte(kv.key), kv.param) }, "space.Set panics, tc #%d", i)
 	}
 
 	// Test space.Get
 	for i, kv := range kvs {
-		i, kv := i, kv
 		var param int64
 		require.NotPanics(t, func() { space.Get(ctx, []byte(kv.key), &param) }, "space.Get panics, tc #%d", i)
 		require.Equal(t, kv.param, param, "stored param not equal, tc #%d", i)
@@ -110,20 +120,17 @@ func TestKeeper(t *testing.T) {
 
 	// Test invalid space.Get
 	for i, kv := range kvs {
-		kv := kv
 		var param bool
 		require.Panics(t, func() { space.Get(ctx, []byte(kv.key), &param) }, "invalid space.Get not panics, tc #%d", i)
 	}
 
 	// Test invalid space.Set
 	for i, kv := range kvs {
-		kv := kv
 		require.Panics(t, func() { space.Set(ctx, []byte(kv.key), true) }, "invalid space.Set not panics, tc #%d", i)
 	}
 
 	// Test GetSubspace
 	for i, kv := range kvs {
-		i, kv := i, kv
 		var gparam, param int64
 		gspace, ok := keeper.GetSubspace("test")
 		require.True(t, ok, "cannot retrieve subspace, tc #%d", i)
@@ -182,9 +189,9 @@ func TestSubspace(t *testing.T) {
 		{"uint16", uint16(1), uint16(0), new(uint16)},
 		{"uint32", uint32(1), uint32(0), new(uint32)},
 		{"uint64", uint64(1), uint64(0), new(uint64)},
-		{"int", sdk.NewInt(1), *new(math.Int), new(math.Int)},
-		{"uint", sdk.NewUint(1), *new(sdk.Uint), new(sdk.Uint)},
-		{"dec", sdk.NewDec(1), *new(sdk.Dec), new(sdk.Dec)},
+		{"int", math.NewInt(1), math.Int{}, new(math.Int)},
+		{"uint", math.NewUint(1), math.Uint{}, new(math.Uint)},
+		{"dec", math.LegacyNewDec(1), math.LegacyDec{}, new(math.LegacyDec)},
 		{"struct", s{1}, s{0}, new(s)},
 	}
 
@@ -197,9 +204,9 @@ func TestSubspace(t *testing.T) {
 		types.NewParamSetPair([]byte("uint16"), uint16(0), validateNoOp),
 		types.NewParamSetPair([]byte("uint32"), uint32(0), validateNoOp),
 		types.NewParamSetPair([]byte("uint64"), uint64(0), validateNoOp),
-		types.NewParamSetPair([]byte("int"), sdk.Int{}, validateNoOp),
-		types.NewParamSetPair([]byte("uint"), sdk.Uint{}, validateNoOp),
-		types.NewParamSetPair([]byte("dec"), sdk.Dec{}, validateNoOp),
+		types.NewParamSetPair([]byte("int"), math.Int{}, validateNoOp),
+		types.NewParamSetPair([]byte("uint"), math.Uint{}, validateNoOp),
+		types.NewParamSetPair([]byte("dec"), math.LegacyDec{}, validateNoOp),
 		types.NewParamSetPair([]byte("struct"), s{}, validateNoOp),
 	)
 
@@ -208,7 +215,6 @@ func TestSubspace(t *testing.T) {
 
 	// Test space.Set, space.Modified
 	for i, kv := range kvs {
-		i, kv := i, kv
 		require.False(t, space.Modified(ctx, []byte(kv.key)), "space.Modified returns true before setting, tc #%d", i)
 		require.NotPanics(t, func() { space.Set(ctx, []byte(kv.key), kv.param) }, "space.Set panics, tc #%d", i)
 		require.True(t, space.Modified(ctx, []byte(kv.key)), "space.Modified returns false after setting, tc #%d", i)
@@ -216,7 +222,6 @@ func TestSubspace(t *testing.T) {
 
 	// Test space.Get, space.GetIfExists
 	for i, kv := range kvs {
-		i, kv := i, kv
 		require.NotPanics(t, func() { space.GetIfExists(ctx, []byte("invalid"), kv.ptr) }, "space.GetIfExists panics when no value exists, tc #%d", i)
 		require.Equal(t, kv.zero, indirect(kv.ptr), "space.GetIfExists unmarshalls when no value exists, tc #%d", i)
 		require.Panics(t, func() { space.Get(ctx, []byte("invalid"), kv.ptr) }, "invalid space.Get not panics when no value exists, tc #%d", i)

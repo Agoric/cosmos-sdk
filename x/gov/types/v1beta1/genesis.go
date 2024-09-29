@@ -3,8 +3,9 @@ package v1beta1
 import (
 	"fmt"
 
-	"github.com/cosmos/cosmos-sdk/codec/types"
-	sdk "github.com/cosmos/cosmos-sdk/types"
+	gogoprotoany "github.com/cosmos/gogoproto/types/any"
+
+	"cosmossdk.io/math"
 )
 
 // NewGenesisState creates a new genesis state for the governance module
@@ -27,6 +28,7 @@ func DefaultGenesisState() *GenesisState {
 	)
 }
 
+// Equal returns true if the GenesisStates are equal
 func (data GenesisState) Equal(other GenesisState) bool {
 	return data.StartingProposalId == other.StartingProposalId &&
 		data.Deposits.Equal(other.Deposits) &&
@@ -45,13 +47,13 @@ func (data GenesisState) Empty() bool {
 // ValidateGenesis checks if parameters are within valid ranges
 func ValidateGenesis(data *GenesisState) error {
 	threshold := data.TallyParams.Threshold
-	if threshold.IsNegative() || threshold.GT(sdk.OneDec()) {
+	if threshold.IsNegative() || threshold.GT(math.LegacyOneDec()) {
 		return fmt.Errorf("governance vote threshold should be positive and less or equal to one, is %s",
 			threshold.String())
 	}
 
 	veto := data.TallyParams.VetoThreshold
-	if veto.IsNegative() || veto.GT(sdk.OneDec()) {
+	if veto.IsNegative() || veto.GT(math.LegacyOneDec()) {
 		return fmt.Errorf("governance vote veto threshold should be positive and less or equal to one, is %s",
 			veto.String())
 	}
@@ -64,10 +66,10 @@ func ValidateGenesis(data *GenesisState) error {
 	return nil
 }
 
-var _ types.UnpackInterfacesMessage = GenesisState{}
+var _ gogoprotoany.UnpackInterfacesMessage = GenesisState{}
 
 // UnpackInterfaces implements UnpackInterfacesMessage.UnpackInterfaces
-func (data GenesisState) UnpackInterfaces(unpacker types.AnyUnpacker) error {
+func (data GenesisState) UnpackInterfaces(unpacker gogoprotoany.AnyUnpacker) error {
 	for _, p := range data.Proposals {
 		err := p.UnpackInterfaces(unpacker)
 		if err != nil {

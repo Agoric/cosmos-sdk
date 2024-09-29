@@ -5,19 +5,21 @@ import (
 
 	"github.com/stretchr/testify/assert"
 
+	"cosmossdk.io/math"
+	"cosmossdk.io/x/staking"
+	"cosmossdk.io/x/staking/testutil"
+	"cosmossdk.io/x/staking/types"
+
 	"github.com/cosmos/cosmos-sdk/crypto/keys/ed25519"
 	sdk "github.com/cosmos/cosmos-sdk/types"
-	"github.com/cosmos/cosmos-sdk/x/staking"
-	"github.com/cosmos/cosmos-sdk/x/staking/teststaking"
-	"github.com/cosmos/cosmos-sdk/x/staking/types"
 )
 
 func TestValidateGenesis(t *testing.T) {
 	genValidators1 := make([]types.Validator, 1, 5)
 	pk := ed25519.GenPrivKey().PubKey()
-	genValidators1[0] = teststaking.NewValidator(t, sdk.ValAddress(pk.Address()), pk)
-	genValidators1[0].Tokens = sdk.OneInt()
-	genValidators1[0].DelegatorShares = sdk.OneDec()
+	genValidators1[0] = testutil.NewValidator(t, sdk.ValAddress(pk.Address()), pk)
+	genValidators1[0].Tokens = math.OneInt()
+	genValidators1[0].DelegatorShares = math.LegacyOneDec()
 
 	tests := []struct {
 		name    string
@@ -32,7 +34,7 @@ func TestValidateGenesis(t *testing.T) {
 		}, true},
 		{"no delegator shares", func(data *types.GenesisState) {
 			data.Validators = genValidators1
-			data.Validators[0].DelegatorShares = sdk.ZeroDec()
+			data.Validators[0].DelegatorShares = math.LegacyZeroDec()
 		}, true},
 		{"jailed and bonded validator", func(data *types.GenesisState) {
 			data.Validators = genValidators1
@@ -42,8 +44,6 @@ func TestValidateGenesis(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		tt := tt
-
 		t.Run(tt.name, func(t *testing.T) {
 			genesisState := types.DefaultGenesisState()
 			tt.mutate(genesisState)

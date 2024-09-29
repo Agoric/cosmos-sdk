@@ -1,8 +1,9 @@
 package keyring
 
 import (
-	"fmt"
 	"strings"
+
+	errorsmod "cosmossdk.io/errors"
 
 	"github.com/cosmos/cosmos-sdk/crypto/hd"
 )
@@ -21,7 +22,7 @@ func NewSigningAlgoFromString(str string, algoList SigningAlgoList) (SignatureAl
 			return algo, nil
 		}
 	}
-	return nil, fmt.Errorf("provided algorithm %q is not supported", str)
+	return nil, errorsmod.Wrap(ErrUnsupportedSigningAlgo, str)
 }
 
 // SigningAlgoList is a slice of signature algorithms

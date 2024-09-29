@@ -1,9 +1,8 @@
 package multisig
 
 import (
-	"github.com/tendermint/tendermint/crypto/sr25519"
-
 	"github.com/cosmos/cosmos-sdk/codec"
+	bls12_381 "github.com/cosmos/cosmos-sdk/crypto/keys/bls12_381"
 	"github.com/cosmos/cosmos-sdk/crypto/keys/ed25519"
 	"github.com/cosmos/cosmos-sdk/crypto/keys/secp256k1"
 	cryptotypes "github.com/cosmos/cosmos-sdk/crypto/types"
@@ -12,22 +11,22 @@ import (
 // TODO: Figure out API for others to either add their own pubkey types, or
 // to make verify / marshal accept a AminoCdc.
 const (
+	// PubKeyAminoRoute defines the amino route for a multisig threshold public key
 	PubKeyAminoRoute = "tendermint/PubKeyMultisigThreshold"
 )
 
-// nolint
-// Deprecated: Amino is being deprecated in the SDK. But even if you need to
+// AminoCdc is being deprecated in the SDK. But even if you need to
 // use Amino for some reason, please use `codec/legacy.Cdc` instead.
 var AminoCdc = codec.NewLegacyAmino()
 
 func init() {
 	AminoCdc.RegisterInterface((*cryptotypes.PubKey)(nil), nil)
 	AminoCdc.RegisterConcrete(ed25519.PubKey{},
-		ed25519.PubKeyName, nil)
-	AminoCdc.RegisterConcrete(sr25519.PubKey{},
-		sr25519.PubKeyName, nil)
+		ed25519.PubKeyName)
 	AminoCdc.RegisterConcrete(&secp256k1.PubKey{},
-		secp256k1.PubKeyName, nil)
+		secp256k1.PubKeyName)
+	AminoCdc.RegisterConcrete(&bls12_381.PubKey{},
+		bls12_381.PubKeyName)
 	AminoCdc.RegisterConcrete(&LegacyAminoPubKey{},
-		PubKeyAminoRoute, nil)
+		PubKeyAminoRoute)
 }
