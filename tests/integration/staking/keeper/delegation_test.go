@@ -6,14 +6,13 @@ import (
 
 	"gotest.tools/v3/assert"
 
-	"cosmossdk.io/core/header"
 	"cosmossdk.io/math"
-	banktestutil "cosmossdk.io/x/bank/testutil"
-	"cosmossdk.io/x/staking/keeper"
-	"cosmossdk.io/x/staking/testutil"
-	"cosmossdk.io/x/staking/types"
 
 	sdk "github.com/cosmos/cosmos-sdk/types"
+	banktestutil "github.com/cosmos/cosmos-sdk/x/bank/testutil"
+	"github.com/cosmos/cosmos-sdk/x/staking/keeper"
+	"github.com/cosmos/cosmos-sdk/x/staking/testutil"
+	"github.com/cosmos/cosmos-sdk/x/staking/types"
 )
 
 func TestUnbondingDelegationsMaxEntries(t *testing.T) {
@@ -66,7 +65,7 @@ func TestUnbondingDelegationsMaxEntries(t *testing.T) {
 	totalUnbonded := math.NewInt(0)
 	for i := int64(0); i < int64(maxEntries); i++ {
 		var err error
-		ctx = ctx.WithHeaderInfo(header.Info{Height: i})
+		ctx = ctx.WithBlockHeight(i)
 		var amount math.Int
 		completionTime, amount, err = f.stakingKeeper.Undelegate(ctx, addrDel, addrVal, math.LegacyNewDec(1))
 		assert.NilError(t, err)
@@ -94,9 +93,7 @@ func TestUnbondingDelegationsMaxEntries(t *testing.T) {
 	assert.Assert(math.IntEq(t, newNotBonded, oldNotBonded))
 
 	// mature unbonding delegations
-	ctx = ctx.WithHeaderInfo(header.Info{Time: completionTime})
-	acc := f.accountKeeper.NewAccountWithAddress(ctx, addrDel)
-	f.accountKeeper.SetAccount(ctx, acc)
+	ctx = ctx.WithBlockTime(completionTime)
 	_, err = f.stakingKeeper.CompleteUnbonding(ctx, addrDel, addrVal)
 	assert.NilError(t, err)
 

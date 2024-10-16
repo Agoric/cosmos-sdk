@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	dbm "github.com/cosmos/cosmos-db"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/reflect/protoreflect"
 	"google.golang.org/protobuf/testing/protocmp"
@@ -16,7 +17,6 @@ import (
 	"pgregory.net/rapid"
 
 	queryv1beta1 "cosmossdk.io/api/cosmos/base/query/v1beta1"
-	coretesting "cosmossdk.io/core/testing"
 	sdkerrors "cosmossdk.io/errors"
 	"cosmossdk.io/orm/encoding/ormkv"
 	"cosmossdk.io/orm/internal/testkv"
@@ -97,7 +97,6 @@ func TestPaginationLimitCountTotal(t *testing.T) {
 
 // check that the ormkv.Entry's decode and encode to the same bytes
 func checkEncodeDecodeEntries(t *testing.T, table ormtable.Table, store kv.ReadonlyStore) {
-	t.Helper()
 	it, err := store.Iterator(nil, nil)
 	assert.NilError(t, err)
 	for it.Valid() {
@@ -114,7 +113,6 @@ func checkEncodeDecodeEntries(t *testing.T, table ormtable.Table, store kv.Reado
 }
 
 func runTestScenario(t *testing.T, table ormtable.Table, backend ormtable.Backend) {
-	t.Helper()
 	ctx := ormtable.WrapContextDefault(backend)
 	store, err := testpb.NewExampleTableTable(table)
 	assert.NilError(t, err)
@@ -463,7 +461,6 @@ func TestRandomTableData(t *testing.T) {
 }
 
 func testTable(t *testing.T, tableData *TableData) {
-	t.Helper()
 	for _, index := range tableData.table.Indexes() {
 		indexModel := &IndexModel{
 			TableData: tableData,
@@ -478,7 +475,6 @@ func testTable(t *testing.T, tableData *TableData) {
 }
 
 func testUniqueIndex(t *testing.T, model *IndexModel) {
-	t.Helper()
 	index := model.index.(ormtable.UniqueIndex)
 	t.Logf("testing unique index %T %s", index, index.Fields())
 	for i := 0; i < len(model.data); i++ {
@@ -501,7 +497,6 @@ func testUniqueIndex(t *testing.T, model *IndexModel) {
 }
 
 func testIndex(t *testing.T, model *IndexModel) {
-	t.Helper()
 	index := model.index
 	if index.IsFullyOrdered() {
 		t.Logf("testing index %T %s", index, index.Fields())
@@ -704,7 +699,7 @@ func TestJSONExportImport(t *testing.T) {
 	assertTablesEqual(t, table, store, store2)
 }
 
-func assertTablesEqual(t assert.TestingT, table ormtable.Table, ctx, ctx2 context.Context) {
+func assertTablesEqual(t assert.TestingT, table ormtable.Table, ctx, ctx2 context.Context) { //nolint:revive // ignore long function name
 	it, err := table.List(ctx, nil)
 	assert.NilError(t, err)
 	it2, err := table.List(ctx2, nil)
@@ -742,8 +737,8 @@ func TestReadonly(t *testing.T) {
 	})
 	assert.NilError(t, err)
 	readBackend := ormtable.NewReadBackend(ormtable.ReadBackendOptions{
-		CommitmentStoreReader: testkv.TestStore{Db: coretesting.NewMemDB()},
-		IndexStoreReader:      testkv.TestStore{Db: coretesting.NewMemDB()},
+		CommitmentStoreReader: dbm.NewMemDB(),
+		IndexStoreReader:      dbm.NewMemDB(),
 	})
 	ctx := ormtable.WrapContextDefault(readBackend)
 	assert.ErrorIs(t, ormerrors.ReadOnly, table.Insert(ctx, &testpb.ExampleTable{}))

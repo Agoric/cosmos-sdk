@@ -136,6 +136,18 @@ simd config view client # views the current app client config
 confix view ~/.simapp/config/client.toml # views the current app client conf
 ```
 
+### View
+
+View a configuration file, e.g:
+
+```shell
+simd config view client # views the current app client config
+```
+
+```shell
+confix view ~/.simapp/config/client.toml # views the current app client conf
+```
+
 ### Maintainer
 
 At each SDK modification of the default configuration, add the default SDK config under `data/vXX-app.toml`.

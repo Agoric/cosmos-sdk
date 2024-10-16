@@ -20,6 +20,7 @@ type Info struct {
 	Time    time.Time // Time returns the time of the block
 	AppHash []byte    // AppHash used in the current block header
 	ChainID string    // ChainId returns the chain ID of the block
+	AppHash []byte    // AppHash used in the current block header
 }
 
 const hashSize = sha256.Size

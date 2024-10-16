@@ -151,7 +151,7 @@ func getKeyringFromCtx(ctx *context.Context) keyring.Keyring {
 	dctx := *ctx
 	if dctx != nil {
 		if clientCtx := dctx.Value(client.ClientContextKey); clientCtx != nil {
-			k, err := sdkkeyring.NewAutoCLIKeyring(clientCtx.(*client.Context).Keyring, clientCtx.(*client.Context).AddressCodec)
+			k, err := sdkkeyring.NewAutoCLIKeyring(clientCtx.(*client.Context).Keyring)
 			if err != nil {
 				panic(fmt.Errorf("failed to create keyring: %w", err))
 			}

@@ -19,6 +19,8 @@ import (
 	"cosmossdk.io/client/v2/internal/flags"
 	"cosmossdk.io/client/v2/internal/util"
 	"cosmossdk.io/core/address"
+
+	"github.com/cosmos/cosmos-sdk/runtime"
 )
 
 const (
@@ -26,7 +28,6 @@ const (
 	ValidatorAddressStringScalarType = "cosmos.ValidatorAddressString"
 	ConsensusAddressStringScalarType = "cosmos.ConsensusAddressString"
 	PubkeyScalarType                 = "cosmos.Pubkey"
-	DecScalarType                    = "cosmos.Dec"
 )
 
 // Builder manages options for building pflag flags for protobuf messages.
@@ -50,8 +51,8 @@ type Builder struct {
 
 	// Address Codecs are the address codecs to use for client/v2.
 	AddressCodec          address.Codec
-	ValidatorAddressCodec address.ValidatorAddressCodec
-	ConsensusAddressCodec address.ConsensusAddressCodec
+	ValidatorAddressCodec runtime.ValidatorAddressCodec
+	ConsensusAddressCodec runtime.ConsensusAddressCodec
 }
 
 func (b *Builder) init() {
@@ -68,7 +69,6 @@ func (b *Builder) init() {
 		b.scalarFlagTypes[ValidatorAddressStringScalarType] = validatorAddressStringType{}
 		b.scalarFlagTypes[ConsensusAddressStringScalarType] = consensusAddressStringType{}
 		b.scalarFlagTypes[PubkeyScalarType] = pubkeyType{}
-		b.scalarFlagTypes[DecScalarType] = decType{}
 	}
 }
 
@@ -245,10 +245,10 @@ func (b *Builder) addMessageFlags(ctx *context.Context, flagSet *pflag.FlagSet, 
 
 		flagOpts := commandOptions.FlagOptions[fieldName]
 		name, hasValue, err := b.addFieldFlag(ctx, flagSet, field, flagOpts, options)
+		flagOptsByFlagName[name] = flagOpts
 		if err != nil {
 			return nil, err
 		}
-		flagOptsByFlagName[name] = flagOpts
 
 		messageBinder.flagBindings = append(messageBinder.flagBindings, fieldBinding{
 			hasValue: hasValue,

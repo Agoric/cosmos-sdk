@@ -5,24 +5,23 @@ import (
 	"sort"
 	"testing"
 
-	abci "github.com/cometbft/cometbft/api/cometbft/abci/v1"
-	cmtproto "github.com/cometbft/cometbft/api/cometbft/types/v1"
+	abci "github.com/cometbft/cometbft/abci/types"
+	cmtproto "github.com/cometbft/cometbft/proto/tendermint/types"
 	protoio "github.com/cosmos/gogoproto/io"
 	"github.com/cosmos/gogoproto/proto"
-	gogotypes "github.com/cosmos/gogoproto/types"
 	"gotest.tools/v3/assert"
 
 	"cosmossdk.io/core/comet"
 	"cosmossdk.io/core/header"
 	"cosmossdk.io/math"
-	"cosmossdk.io/x/staking/testutil"
-	stakingtypes "cosmossdk.io/x/staking/types"
 
 	"github.com/cosmos/cosmos-sdk/baseapp"
-	"github.com/cosmos/cosmos-sdk/crypto/keys/ed25519"
+	ed25519 "github.com/cosmos/cosmos-sdk/crypto/keys/ed25519"
 	cryptotypes "github.com/cosmos/cosmos-sdk/crypto/types"
 	simtestutil "github.com/cosmos/cosmos-sdk/testutil/sims"
 	sdk "github.com/cosmos/cosmos-sdk/types"
+	"github.com/cosmos/cosmos-sdk/x/staking/testutil"
+	stakingtypes "github.com/cosmos/cosmos-sdk/x/staking/types"
 )
 
 const chainID = "chain-id-123"
@@ -36,7 +35,7 @@ func TestValidateVoteExtensions(t *testing.T) {
 
 	// enable vote extensions
 	cp := simtestutil.DefaultConsensusParams
-	cp.Feature = &cmtproto.FeatureParams{VoteExtensionsEnableHeight: &gogotypes.Int64Value{Value: 1}}
+	cp.Abci = &cmtproto.ABCIParams{VoteExtensionsEnableHeight: 1}
 	f.sdkCtx = f.sdkCtx.WithConsensusParams(*cp).WithHeaderInfo(header.Info{Height: 2, ChainID: chainID})
 
 	// setup the validators
@@ -49,8 +48,6 @@ func TestValidateVoteExtensions(t *testing.T) {
 	vals := []stakingtypes.Validator{}
 	for _, v := range privKeys {
 		valAddr := sdk.ValAddress(v.PubKey().Address())
-		acc := f.accountKeeper.NewAccountWithAddress(f.sdkCtx, sdk.AccAddress(v.PubKey().Address()))
-		f.accountKeeper.SetAccount(f.sdkCtx, acc)
 		simtestutil.AddTestAddrsFromPubKeys(f.bankKeeper, f.stakingKeeper, f.sdkCtx, []cryptotypes.PubKey{v.PubKey()}, math.NewInt(100000000000))
 		vals = append(vals, testutil.NewValidator(t, valAddr, v.PubKey()))
 	}
@@ -98,7 +95,7 @@ func TestValidateVoteExtensions(t *testing.T) {
 	eci, ci := extendedCommitToLastCommit(abci.ExtendedCommitInfo{Round: 0, Votes: votes})
 	f.sdkCtx = f.sdkCtx.WithCometInfo(ci)
 
-	err := baseapp.ValidateVoteExtensions(f.sdkCtx, f.stakingKeeper, eci)
+	err := baseapp.ValidateVoteExtensions(f.sdkCtx, f.stakingKeeper, 0, "", eci)
 	assert.NilError(t, err)
 }
 
@@ -111,28 +108,26 @@ func mashalVoteExt(msg proto.Message) ([]byte, error) {
 	return buf.Bytes(), nil
 }
 
-func extendedCommitToLastCommit(ec abci.ExtendedCommitInfo) (abci.ExtendedCommitInfo, comet.Info) {
+func extendedCommitToLastCommit(ec abci.ExtendedCommitInfo) (abci.ExtendedCommitInfo, comet.BlockInfo) {
 	// sort the extended commit info
 	sort.Sort(extendedVoteInfos(ec.Votes))
 
 	// convert the extended commit info to last commit info
-	lastCommit := comet.CommitInfo{
+	lastCommit := abci.CommitInfo{
 		Round: ec.Round,
-		Votes: make([]comet.VoteInfo, len(ec.Votes)),
+		Votes: make([]abci.VoteInfo, len(ec.Votes)),
 	}
 
 	for i, vote := range ec.Votes {
-		lastCommit.Votes[i] = comet.VoteInfo{
-			Validator: comet.Validator{
+		lastCommit.Votes[i] = abci.VoteInfo{
+			Validator: abci.Validator{
 				Address: vote.Validator.Address,
 				Power:   vote.Validator.Power,
 			},
 		}
 	}
 
-	return ec, comet.Info{
-		LastCommit: lastCommit,
-	}
+	return ec, baseapp.NewBlockInfo(nil, nil, nil, lastCommit)
 }
 
 type extendedVoteInfos []abci.ExtendedVoteInfo

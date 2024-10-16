@@ -4,28 +4,12 @@ import (
 	"encoding/json"
 	"testing"
 
-	abci "github.com/cometbft/cometbft/api/cometbft/abci/v1"
-	"github.com/stretchr/testify/require"
+	abci "github.com/cometbft/cometbft/abci/types"
+	dbm "github.com/cosmos/cosmos-db"
 	"gotest.tools/v3/assert"
 
-	"cosmossdk.io/core/header"
-	corestore "cosmossdk.io/core/store"
-	coretesting "cosmossdk.io/core/testing"
 	"cosmossdk.io/depinject"
 	"cosmossdk.io/log"
-	sdkmath "cosmossdk.io/math"
-	_ "cosmossdk.io/x/accounts"
-	_ "cosmossdk.io/x/bank"
-	bankkeeper "cosmossdk.io/x/bank/keeper"
-	banktypes "cosmossdk.io/x/bank/types"
-	_ "cosmossdk.io/x/consensus"
-	"cosmossdk.io/x/gov"
-	"cosmossdk.io/x/gov/keeper"
-	"cosmossdk.io/x/gov/types"
-	v1 "cosmossdk.io/x/gov/types/v1"
-	_ "cosmossdk.io/x/staking"
-	stakingkeeper "cosmossdk.io/x/staking/keeper"
-	stakingtypes "cosmossdk.io/x/staking/types"
 
 	"github.com/cosmos/cosmos-sdk/codec"
 	"github.com/cosmos/cosmos-sdk/runtime"
@@ -35,6 +19,21 @@ import (
 	_ "github.com/cosmos/cosmos-sdk/x/auth"
 	authkeeper "github.com/cosmos/cosmos-sdk/x/auth/keeper"
 	authtypes "github.com/cosmos/cosmos-sdk/x/auth/types"
+	_ "github.com/cosmos/cosmos-sdk/x/bank"
+	bankkeeper "github.com/cosmos/cosmos-sdk/x/bank/keeper"
+	banktypes "github.com/cosmos/cosmos-sdk/x/bank/types"
+	_ "github.com/cosmos/cosmos-sdk/x/consensus"
+	_ "github.com/cosmos/cosmos-sdk/x/distribution"
+	distrkeeper "github.com/cosmos/cosmos-sdk/x/distribution/keeper"
+	disttypes "github.com/cosmos/cosmos-sdk/x/distribution/types"
+	"github.com/cosmos/cosmos-sdk/x/gov"
+	"github.com/cosmos/cosmos-sdk/x/gov/keeper"
+	"github.com/cosmos/cosmos-sdk/x/gov/types"
+	v1 "github.com/cosmos/cosmos-sdk/x/gov/types/v1"
+	_ "github.com/cosmos/cosmos-sdk/x/params"
+	_ "github.com/cosmos/cosmos-sdk/x/staking"
+	stakingkeeper "github.com/cosmos/cosmos-sdk/x/staking/keeper"
+	stakingtypes "github.com/cosmos/cosmos-sdk/x/staking/types"
 )
 
 type suite struct {
@@ -42,20 +41,21 @@ type suite struct {
 	app           *runtime.App
 	AccountKeeper authkeeper.AccountKeeper
 	BankKeeper    bankkeeper.Keeper
+	DistrKeeper   distrkeeper.Keeper
 	GovKeeper     *keeper.Keeper
 	StakingKeeper *stakingkeeper.Keeper
 	appBuilder    *runtime.AppBuilder
 }
 
 var appConfig = configurator.NewAppConfig(
-	configurator.AccountsModule(),
+	configurator.ParamsModule(),
 	configurator.AuthModule(),
 	configurator.StakingModule(),
 	configurator.BankModule(),
 	configurator.GovModule(),
+	configurator.DistributionModule(),
 	configurator.MintModule(),
 	configurator.ConsensusModule(),
-	configurator.ProtocolPoolModule(),
 )
 
 func TestImportExportQueues(t *testing.T) {
@@ -68,25 +68,25 @@ func TestImportExportQueues(t *testing.T) {
 			depinject.Supply(log.NewNopLogger()),
 		),
 		simtestutil.DefaultStartUpConfig(),
-		&s1.AccountKeeper, &s1.BankKeeper, &s1.GovKeeper, &s1.StakingKeeper, &s1.cdc, &s1.appBuilder,
+		&s1.AccountKeeper, &s1.BankKeeper, &s1.DistrKeeper, &s1.GovKeeper, &s1.StakingKeeper, &s1.cdc, &s1.appBuilder,
 	)
 	assert.NilError(t, err)
 
 	ctx := s1.app.BaseApp.NewContext(false)
 	addrs := simtestutil.AddTestAddrs(s1.BankKeeper, s1.StakingKeeper, ctx, 1, valTokens)
 
-	_, err = s1.app.FinalizeBlock(&abci.FinalizeBlockRequest{
+	_, err = s1.app.FinalizeBlock(&abci.RequestFinalizeBlock{
 		Height: s1.app.LastBlockHeight() + 1,
 	})
 	assert.NilError(t, err)
 
 	ctx = s1.app.BaseApp.NewContext(false)
 	// Create two proposals, put the second into the voting period
-	proposal1, err := s1.GovKeeper.SubmitProposal(ctx, []sdk.Msg{mkTestLegacyContent(t)}, "", "test", "description", addrs[0], v1.ProposalType_PROPOSAL_TYPE_STANDARD)
+	proposal1, err := s1.GovKeeper.SubmitProposal(ctx, []sdk.Msg{mkTestLegacyContent(t)}, "", "test", "description", addrs[0], false)
 	assert.NilError(t, err)
 	proposalID1 := proposal1.Id
 
-	proposal2, err := s1.GovKeeper.SubmitProposal(ctx, []sdk.Msg{mkTestLegacyContent(t)}, "", "test", "description", addrs[0], v1.ProposalType_PROPOSAL_TYPE_STANDARD)
+	proposal2, err := s1.GovKeeper.SubmitProposal(ctx, []sdk.Msg{mkTestLegacyContent(t)}, "", "test", "description", addrs[0], false)
 	assert.NilError(t, err)
 	proposalID2 := proposal2.Id
 
@@ -103,12 +103,10 @@ func TestImportExportQueues(t *testing.T) {
 	assert.Assert(t, proposal1.Status == v1.StatusDepositPeriod)
 	assert.Assert(t, proposal2.Status == v1.StatusVotingPeriod)
 
-	authGenState, err := s1.AccountKeeper.ExportGenesis(ctx)
-	require.NoError(t, err)
-	bankGenState, err := s1.BankKeeper.ExportGenesis(ctx)
-	require.NoError(t, err)
-	stakingGenState, err := s1.StakingKeeper.ExportGenesis(ctx)
-	require.NoError(t, err)
+	authGenState := s1.AccountKeeper.ExportGenesis(ctx)
+	bankGenState := s1.BankKeeper.ExportGenesis(ctx)
+	stakingGenState := s1.StakingKeeper.ExportGenesis(ctx)
+	distributionGenState := s1.DistrKeeper.ExportGenesis(ctx)
 
 	// export the state and import it into a new app
 	govGenState, _ := gov.ExportGenesis(ctx, s1.GovKeeper)
@@ -118,12 +116,13 @@ func TestImportExportQueues(t *testing.T) {
 	genesisState[banktypes.ModuleName] = s1.cdc.MustMarshalJSON(bankGenState)
 	genesisState[types.ModuleName] = s1.cdc.MustMarshalJSON(govGenState)
 	genesisState[stakingtypes.ModuleName] = s1.cdc.MustMarshalJSON(stakingGenState)
+	genesisState[disttypes.ModuleName] = s1.cdc.MustMarshalJSON(distributionGenState)
 
 	stateBytes, err := json.MarshalIndent(genesisState, "", " ")
 	assert.NilError(t, err)
 
 	s2 := suite{}
-	db := coretesting.NewMemDB()
+	db := dbm.NewMemDB()
 	conf2 := simtestutil.DefaultStartUpConfig()
 	conf2.DB = db
 	s2.app, err = simtestutil.SetupWithConfiguration(
@@ -132,7 +131,7 @@ func TestImportExportQueues(t *testing.T) {
 			depinject.Supply(log.NewNopLogger()),
 		),
 		conf2,
-		&s2.AccountKeeper, &s2.BankKeeper, &s2.GovKeeper, &s2.StakingKeeper, &s2.cdc, &s2.appBuilder,
+		&s2.AccountKeeper, &s2.BankKeeper, &s2.DistrKeeper, &s2.GovKeeper, &s2.StakingKeeper, &s2.cdc, &s2.appBuilder,
 	)
 	assert.NilError(t, err)
 
@@ -141,7 +140,7 @@ func TestImportExportQueues(t *testing.T) {
 	assert.NilError(t, err)
 
 	_, err = s2.app.InitChain(
-		&abci.InitChainRequest{
+		&abci.RequestInitChain{
 			Validators:      []abci.ValidatorUpdate{},
 			ConsensusParams: simtestutil.DefaultConsensusParams,
 			AppStateBytes:   stateBytes,
@@ -149,12 +148,12 @@ func TestImportExportQueues(t *testing.T) {
 	)
 	assert.NilError(t, err)
 
-	_, err = s2.app.FinalizeBlock(&abci.FinalizeBlockRequest{
+	_, err = s2.app.FinalizeBlock(&abci.RequestFinalizeBlock{
 		Height: s2.app.LastBlockHeight() + 1,
 	})
 	assert.NilError(t, err)
 
-	_, err = s2.app.FinalizeBlock(&abci.FinalizeBlockRequest{
+	_, err = s2.app.FinalizeBlock(&abci.RequestFinalizeBlock{
 		Height: s2.app.LastBlockHeight() + 1,
 	})
 	assert.NilError(t, err)
@@ -164,7 +163,7 @@ func TestImportExportQueues(t *testing.T) {
 	params, err = s2.GovKeeper.Params.Get(ctx2)
 	assert.NilError(t, err)
 	// Jump the time forward past the DepositPeriod and VotingPeriod
-	ctx2 = ctx2.WithHeaderInfo(header.Info{Time: ctx2.BlockHeader().Time.Add(*params.MaxDepositPeriod).Add(*params.VotingPeriod)})
+	ctx2 = ctx2.WithBlockTime(ctx2.BlockHeader().Time.Add(*params.MaxDepositPeriod).Add(*params.VotingPeriod))
 
 	// Make sure that they are still in the DepositPeriod and VotingPeriod respectively
 	proposal1, err = s2.GovKeeper.Proposals.Get(ctx2, proposalID1)
@@ -178,7 +177,7 @@ func TestImportExportQueues(t *testing.T) {
 	assert.DeepEqual(t, sdk.Coins(params.MinDeposit), s2.BankKeeper.GetAllBalances(ctx2, macc.GetAddress()))
 
 	// Run the endblocker. Check to make sure that proposal1 is removed from state, and proposal2 is finished VotingPeriod.
-	err = s2.GovKeeper.EndBlocker(ctx2)
+	err = gov.EndBlocker(ctx2, s2.GovKeeper)
 	assert.NilError(t, err)
 
 	proposal1, err = s2.GovKeeper.Proposals.Get(ctx2, proposalID1)
@@ -189,8 +188,7 @@ func TestImportExportQueues(t *testing.T) {
 	assert.Assert(t, proposal2.Status == v1.StatusRejected)
 }
 
-func clearDB(t *testing.T, db corestore.KVStoreWithBatch) {
-	t.Helper()
+func clearDB(t *testing.T, db *dbm.MemDB) {
 	iter, err := db.Iterator(nil, nil)
 	assert.NilError(t, err)
 	defer iter.Close()
@@ -203,33 +201,4 @@ func clearDB(t *testing.T, db corestore.KVStoreWithBatch) {
 	for _, k := range keys {
 		assert.NilError(t, db.Delete(k))
 	}
-}
-
-func TestImportExportQueues_ErrorUnconsistentState(t *testing.T) {
-	suite := createTestSuite(t)
-	app := suite.app
-	ctx := app.BaseApp.NewContext(false)
-
-	params := v1.DefaultParams()
-	err := gov.InitGenesis(ctx, suite.AccountKeeper, suite.BankKeeper, suite.GovKeeper, &v1.GenesisState{
-		Deposits: v1.Deposits{
-			{
-				ProposalId: 1234,
-				Depositor:  "me",
-				Amount: sdk.Coins{
-					sdk.NewCoin(
-						"stake",
-						sdkmath.NewInt(1234),
-					),
-				},
-			},
-		},
-		Params: &params,
-	})
-	require.Error(t, err)
-	err = gov.InitGenesis(ctx, suite.AccountKeeper, suite.BankKeeper, suite.GovKeeper, v1.DefaultGenesisState())
-	require.NoError(t, err)
-	genState, err := gov.ExportGenesis(ctx, suite.GovKeeper)
-	require.NoError(t, err)
-	require.Equal(t, genState, v1.DefaultGenesisState())
 }

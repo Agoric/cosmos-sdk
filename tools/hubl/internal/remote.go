@@ -3,6 +3,8 @@ package internal
 import (
 	"context"
 	"fmt"
+	"os"
+	"path"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -13,38 +15,71 @@ import (
 
 	"cosmossdk.io/client/v2/autocli"
 	"cosmossdk.io/client/v2/autocli/flag"
-	"cosmossdk.io/tools/hubl/internal/config"
-	"cosmossdk.io/tools/hubl/internal/flags"
 
-	"github.com/cosmos/cosmos-sdk/client"
-	"github.com/cosmos/cosmos-sdk/client/grpc/cmtservice"
-	"github.com/cosmos/cosmos-sdk/crypto/keyring"
+	addresscodec "github.com/cosmos/cosmos-sdk/codec/address"
 )
 
-func InitCmd(config *config.Config, configDir string) *cobra.Command {
+var (
+	flagInsecure = "insecure"
+	flagUpdate   = "update"
+	flagConfig   = "config"
+)
+
+func RootCommand() (*cobra.Command, error) {
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		return nil, err
+	}
+
+	configDir := path.Join(homeDir, DefaultConfigDirName)
+	config, err := LoadConfig(configDir)
+	if err != nil {
+		return nil, err
+	}
+
+	cmd := &cobra.Command{
+		Use:   "hubl",
+		Short: "Hubl is a CLI for interacting with Cosmos SDK chains",
+		Long:  "Hubl is a CLI for interacting with Cosmos SDK chains",
+	}
+
+	// add commands
+	commands, err := RemoteCommand(config, configDir)
+	if err != nil {
+		return nil, err
+	}
+	commands = append(commands, InitCommand(config, configDir))
+
+	cmd.AddCommand(commands...)
+	return cmd, nil
+}
+
+func InitCommand(config *Config, configDir string) *cobra.Command {
 	var insecure bool
 
 	cmd := &cobra.Command{
-		Use:   "init <foochain>",
+		Use:   "init [foochain]",
 		Short: "Initialize a new chain",
-		Long: `To configure a new chain, run this command using the --init flag and the name of the chain as it's listed in the chain registry (https://github.com/cosmos/chain-registry).
+		Long: `To configure a new chain just run this command using the --init flag and the name of the chain as it's listed in the chain registry (https://github.com/cosmos/chain-registry).
 If the chain is not listed in the chain registry, you can use any unique name.`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			chainName := strings.ToLower(args[0])
+
 			return reconfigure(cmd, config, configDir, chainName)
 		},
 	}
 
-	cmd.Flags().BoolVar(&insecure, flags.FlagInsecure, false, "allow setting up insecure gRPC connection")
+	cmd.Flags().BoolVar(&insecure, flagInsecure, false, "allow setting up insecure gRPC connection")
 
 	return cmd
 }
 
-func RemoteCommand(config *config.Config, configDir string) ([]*cobra.Command, error) {
+func RemoteCommand(config *Config, configDir string) ([]*cobra.Command, error) {
 	commands := []*cobra.Command{}
 
 	for chain, chainConfig := range config.Chains {
+		chain, chainConfig := chain, chainConfig
 
 		// load chain info
 		chainInfo := NewChainInfo(configDir, chain, chainConfig)
@@ -53,37 +88,17 @@ func RemoteCommand(config *config.Config, configDir string) ([]*cobra.Command, e
 			continue
 		}
 
-		// add comet commands
-		cometCmds := cmtservice.NewCometBFTCommands()
-		chainInfo.ModuleOptions[cometCmds.Name()] = cometCmds.AutoCLIOptions()
-
 		appOpts := autocli.AppOptions{
 			ModuleOptions: chainInfo.ModuleOptions,
 		}
 
-		addressCodec, validatorAddressCodec, consensusAddressCodec, err := getAddressCodecFromConfig(config, chain)
-		if err != nil {
-			return nil, err
-		}
-
-		kr, err := getKeyring(chain)
-		if err != nil {
-			return nil, err
-		}
-
-		autoCLIKeyring, err := keyring.NewAutoCLIKeyring(kr)
-		if err != nil {
-			return nil, err
-		}
-
 		builder := &autocli.Builder{
 			Builder: flag.Builder{
+				AddressCodec:          addresscodec.NewBech32Codec(chainConfig.Bech32Prefix),
+				ValidatorAddressCodec: addresscodec.NewBech32Codec(fmt.Sprintf("%svaloper", chainConfig.Bech32Prefix)),
+				ConsensusAddressCodec: addresscodec.NewBech32Codec(fmt.Sprintf("%svalcons", chainConfig.Bech32Prefix)),
 				TypeResolver:          &dynamicTypeResolver{chainInfo},
 				FileResolver:          chainInfo.ProtoFiles,
-				AddressCodec:          addressCodec,
-				ValidatorAddressCodec: validatorAddressCodec,
-				ConsensusAddressCodec: consensusAddressCodec,
-				Keyring:               autoCLIKeyring,
 			},
 			GetClientConn: func(command *cobra.Command) (grpc.ClientConnInterface, error) {
 				return chainInfo.OpenClient()
@@ -95,7 +110,6 @@ func RemoteCommand(config *config.Config, configDir string) ([]*cobra.Command, e
 			update   bool
 			reconfig bool
 			insecure bool
-			output   string
 		)
 
 		chainCmd := &cobra.Command{
@@ -106,37 +120,19 @@ func RemoteCommand(config *config.Config, configDir string) ([]*cobra.Command, e
 				case reconfig:
 					return reconfigure(cmd, config, configDir, chain)
 				case update:
-					cmd.Printf("Updating AutoCLI data for %s\n", chain)
+					cmd.Printf("Updating autocli data for %s\n", chain)
 					return chainInfo.Load(true)
 				default:
 					return cmd.Help()
 				}
 			},
 		}
-		chainCmd.Flags().BoolVar(&update, flags.FlagUpdate, false, "update the CLI commands for the selected chain (should be used after every chain upgrade)")
-		chainCmd.Flags().BoolVar(&reconfig, flags.FlagConfig, false, "re-configure the selected chain (allows choosing a new gRPC endpoint and refreshes data")
-		chainCmd.Flags().BoolVar(&insecure, flags.FlagInsecure, false, "allow re-configuring the selected chain using an insecure gRPC connection")
-		chainCmd.PersistentFlags().StringVar(&output, flags.FlagOutput, flags.OutputFormatJSON, fmt.Sprintf("output format (%s|%s)", flags.OutputFormatText, flags.OutputFormatJSON))
-
-		// add chain specific keyring
-		chainCmd.AddCommand(KeyringCmd(chainInfo.Chain))
-
-		// add client context
-		clientCtx := client.Context{}.WithKeyring(kr)
-		chainCmd.SetContext(context.WithValue(context.Background(), client.ClientContextKey, &clientCtx))
+		chainCmd.Flags().BoolVar(&update, flagUpdate, false, "update the CLI commands for the selected chain (should be used after every chain upgrade)")
+		chainCmd.Flags().BoolVar(&reconfig, flagConfig, false, "re-configure the selected chain (allows choosing a new gRPC endpoint and refreshes data")
+		chainCmd.Flags().BoolVar(&insecure, flagInsecure, false, "allow re-configuring the selected chain using an insecure gRPC connection")
 
 		if err := appOpts.EnhanceRootCommandWithBuilder(chainCmd, builder); err != nil {
-			// when enriching the command with autocli fails, we add a command that
-			// will print the error and allow the user to reconfigure the chain instead
-			chainCmd.RunE = func(cmd *cobra.Command, args []string) error {
-				cmd.Printf("Error while loading AutoCLI data for %s: %+v\n", chain, err)
-				cmd.Printf("Attempt to reconfigure the chain using the %s flag\n", flags.FlagConfig)
-				if cmd.Flags().Changed(flags.FlagConfig) {
-					return reconfigure(cmd, config, configDir, chain)
-				}
-
-				return nil
-			}
+			return nil, err
 		}
 
 		commands = append(commands, chainCmd)
@@ -145,24 +141,25 @@ func RemoteCommand(config *config.Config, configDir string) ([]*cobra.Command, e
 	return commands, nil
 }
 
-func RemoteErrorCommand(cfg *config.Config, configDir, chain string, chainConfig *config.ChainConfig, err error) *cobra.Command {
+func RemoteErrorCommand(config *Config, configDir, chain string, chainConfig *ChainConfig, err error) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   chain,
-		Short: fmt.Sprintf("Unable to load %s data", chain),
-		Long:  fmt.Sprintf("Unable to load %s data, reconfiguration needed.", chain),
+		Short: "Unable to load data",
+		Long:  "Unable to load data, reconfiguration needed.",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			cmd.Printf("Error loading chain data for %s: %+v\n", chain, err)
-			return reconfigure(cmd, cfg, configDir, chain)
+
+			return reconfigure(cmd, config, configDir, chain)
 		},
 	}
 
-	cmd.Flags().Bool(flags.FlagInsecure, chainConfig.GRPCEndpoints[0].Insecure, "allow setting up insecure gRPC connection")
+	cmd.Flags().Bool(flagInsecure, chainConfig.GRPCEndpoints[0].Insecure, "allow setting up insecure gRPC connection")
 
 	return cmd
 }
 
-func reconfigure(cmd *cobra.Command, cfg *config.Config, configDir, chain string) error {
-	insecure, _ := cmd.Flags().GetBool(flags.FlagInsecure)
+func reconfigure(cmd *cobra.Command, config *Config, configDir, chain string) error {
+	insecure, _ := cmd.Flags().GetBool(flagInsecure)
 
 	cmd.Printf("Configuring %s\n", chain)
 	endpoint, err := SelectGRPCEndpoints(chain)
@@ -171,8 +168,8 @@ func reconfigure(cmd *cobra.Command, cfg *config.Config, configDir, chain string
 	}
 
 	cmd.Printf("%s endpoint selected\n", endpoint)
-	chainConfig := &config.ChainConfig{
-		GRPCEndpoints: []config.GRPCEndpoint{
+	chainConfig := &ChainConfig{
+		GRPCEndpoints: []GRPCEndpoint{
 			{
 				Endpoint: endpoint,
 				Insecure: insecure,
@@ -195,11 +192,10 @@ func reconfigure(cmd *cobra.Command, cfg *config.Config, configDir, chain string
 		return err
 	}
 
-	chainConfig.KeyringBackend = flags.DefaultKeyringBackend
-	chainConfig.AddressPrefix = addressPrefix
-	cfg.Chains[chain] = chainConfig
+	chainConfig.Bech32Prefix = addressPrefix
+	config.Chains[chain] = chainConfig
 
-	if err := config.Save(configDir, cfg); err != nil {
+	if err := SaveConfig(configDir, config); err != nil {
 		return err
 	}
 

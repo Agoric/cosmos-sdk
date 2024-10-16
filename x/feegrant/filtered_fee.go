@@ -12,6 +12,8 @@ import (
 	corecontext "cosmossdk.io/core/context"
 	errorsmod "cosmossdk.io/errors"
 
+	errorsmod "cosmossdk.io/errors"
+
 	"github.com/cosmos/cosmos-sdk/codec/types"
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	sdkerrors "github.com/cosmos/cosmos-sdk/types/errors"

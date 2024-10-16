@@ -1,42 +1,25 @@
 package keeper_test
 
 import (
-	"context"
 	"testing"
 	"time"
 
+	cmtproto "github.com/cometbft/cometbft/proto/tendermint/types"
 	"github.com/stretchr/testify/require"
 	"gotest.tools/v3/assert"
 
-	"cosmossdk.io/collections"
-	"cosmossdk.io/core/header"
-	"cosmossdk.io/depinject"
-	"cosmossdk.io/log"
 	"cosmossdk.io/math"
-	_ "cosmossdk.io/x/accounts"
-	bankkeeper "cosmossdk.io/x/bank/keeper"
-	banktestutil "cosmossdk.io/x/bank/testutil"
-	_ "cosmossdk.io/x/consensus"
-	_ "cosmossdk.io/x/distribution"
-	distributionkeeper "cosmossdk.io/x/distribution/keeper"
-	_ "cosmossdk.io/x/protocolpool"
-	_ "cosmossdk.io/x/slashing"
-	slashingkeeper "cosmossdk.io/x/slashing/keeper"
-	"cosmossdk.io/x/staking/keeper"
-	"cosmossdk.io/x/staking/testutil"
-	"cosmossdk.io/x/staking/types"
 
 	"github.com/cosmos/cosmos-sdk/codec/address"
-	"github.com/cosmos/cosmos-sdk/crypto/keys/secp256k1"
-	"github.com/cosmos/cosmos-sdk/testutil/configurator"
-	simtestutil "github.com/cosmos/cosmos-sdk/testutil/sims"
 	sdk "github.com/cosmos/cosmos-sdk/types"
-	authkeeper "github.com/cosmos/cosmos-sdk/x/auth/keeper"
+	banktestutil "github.com/cosmos/cosmos-sdk/x/bank/testutil"
+	"github.com/cosmos/cosmos-sdk/x/staking/keeper"
+	"github.com/cosmos/cosmos-sdk/x/staking/testutil"
+	"github.com/cosmos/cosmos-sdk/x/staking/types"
 )
 
 // bootstrapSlashTest creates 3 validators and bootstrap the app.
 func bootstrapSlashTest(t *testing.T, power int64) (*fixture, []sdk.AccAddress, []sdk.ValAddress) {
-	t.Helper()
 	t.Parallel()
 	f := initFixture(t)
 
@@ -89,7 +72,7 @@ func TestSlashUnbondingDelegation(t *testing.T) {
 	assert.Assert(t, slashAmount.Equal(math.NewInt(0)))
 
 	// after the expiration time, no longer eligible for slashing
-	f.sdkCtx = f.sdkCtx.WithHeaderInfo(header.Info{Time: time.Unix(10, 0)})
+	f.sdkCtx = f.sdkCtx.WithBlockHeader(cmtproto.Header{Time: time.Unix(10, 0)})
 	assert.NilError(t, f.stakingKeeper.SetUnbondingDelegation(f.sdkCtx, ubd))
 	slashAmount, err = f.stakingKeeper.SlashUnbondingDelegation(f.sdkCtx, ubd, 0, fraction)
 	assert.NilError(t, err)
@@ -98,7 +81,7 @@ func TestSlashUnbondingDelegation(t *testing.T) {
 	// test valid slash, before expiration timestamp and to which stake contributed
 	notBondedPool := f.stakingKeeper.GetNotBondedPool(f.sdkCtx)
 	oldUnbondedPoolBalances := f.bankKeeper.GetAllBalances(f.sdkCtx, notBondedPool.GetAddress())
-	f.sdkCtx = f.sdkCtx.WithHeaderInfo(header.Info{Time: time.Unix(0, 0)})
+	f.sdkCtx = f.sdkCtx.WithBlockHeader(cmtproto.Header{Time: time.Unix(0, 0)})
 	assert.NilError(t, f.stakingKeeper.SetUnbondingDelegation(f.sdkCtx, ubd))
 	slashAmount, err = f.stakingKeeper.SlashUnbondingDelegation(f.sdkCtx, ubd, 0, fraction)
 	assert.NilError(t, err)
@@ -154,7 +137,7 @@ func TestSlashRedelegation(t *testing.T) {
 	assert.Assert(t, slashAmount.Equal(math.NewInt(0)))
 
 	// after the expiration time, no longer eligible for slashing
-	f.sdkCtx = f.sdkCtx.WithHeaderInfo(header.Info{Time: time.Unix(10, 0)})
+	f.sdkCtx = f.sdkCtx.WithBlockHeader(cmtproto.Header{Time: time.Unix(10, 0)})
 	assert.NilError(t, f.stakingKeeper.SetRedelegation(f.sdkCtx, rd))
 	validator, found = f.stakingKeeper.GetValidator(f.sdkCtx, addrVals[1])
 	assert.Assert(t, found)
@@ -165,14 +148,14 @@ func TestSlashRedelegation(t *testing.T) {
 	balances := f.bankKeeper.GetAllBalances(f.sdkCtx, bondedPool.GetAddress())
 
 	// test valid slash, before expiration timestamp and to which stake contributed
-	f.sdkCtx = f.sdkCtx.WithHeaderInfo(header.Info{Time: time.Unix(0, 0)})
+	f.sdkCtx = f.sdkCtx.WithBlockHeader(cmtproto.Header{Time: time.Unix(0, 0)})
 	assert.NilError(t, f.stakingKeeper.SetRedelegation(f.sdkCtx, rd))
 	validator, found = f.stakingKeeper.GetValidator(f.sdkCtx, addrVals[1])
 	assert.Assert(t, found)
 	slashAmount, err = f.stakingKeeper.SlashRedelegation(f.sdkCtx, validator, rd, 0, fraction)
 	assert.NilError(t, err)
 	assert.Assert(t, slashAmount.Equal(math.NewInt(5)))
-	rd, found = f.stakingKeeper.Redelegations.Get(f.sdkCtx, collections.Join3(addrDels[0].Bytes(), addrVals[0].Bytes(), addrVals[1].Bytes()))
+	rd, found = f.stakingKeeper.GetRedelegation(f.sdkCtx, addrDels[0], addrVals[0], addrVals[1])
 	assert.Assert(t, found)
 	assert.Assert(t, len(rd.Entries) == 1)
 
@@ -183,7 +166,7 @@ func TestSlashRedelegation(t *testing.T) {
 	assert.DeepEqual(t, math.NewInt(10), rd.Entries[0].InitialBalance)
 
 	// shares decreased
-	del, found = f.stakingKeeper.Delegations.Get(f.sdkCtx, collections.Join(addrDels[0], addrVals[1]))
+	del, found = f.stakingKeeper.GetDelegation(f.sdkCtx, addrDels[0], addrVals[1])
 	assert.Assert(t, found)
 	assert.Equal(t, int64(5), del.Shares.RoundInt64())
 
@@ -269,10 +252,7 @@ func TestSlashValidatorAtCurrentHeight(t *testing.T) {
 	assert.DeepEqual(t, f.stakingKeeper.TokensFromConsensusPower(f.sdkCtx, 5).String(), diffTokens.String())
 }
 
-// TestSlashWithUnbondingDelegation tests the slashing of a validator with an unbonding delegation.
-// It sets up an environment with a validator and an unbonding delegation, and then performs slashing
-// operations on the validator. The test verifies that the slashing correctly affects the unbonding
-// delegation and the validator's power.
+// tests Slash at a previous height with an unbonding delegation
 func TestSlashWithUnbondingDelegation(t *testing.T) {
 	f, addrDels, addrVals := bootstrapSlashTest(t, 10)
 
@@ -289,7 +269,7 @@ func TestSlashWithUnbondingDelegation(t *testing.T) {
 	assert.NilError(t, f.stakingKeeper.SetUnbondingDelegation(f.sdkCtx, ubd))
 
 	// slash validator for the first time
-	f.sdkCtx = f.sdkCtx.WithHeaderInfo(header.Info{Height: 12})
+	f.sdkCtx = f.sdkCtx.WithBlockHeight(12)
 	bondedPool := f.stakingKeeper.GetBondedPool(f.sdkCtx)
 	oldBondedPoolBalances := f.bankKeeper.GetAllBalances(f.sdkCtx, bondedPool.GetAddress())
 
@@ -402,7 +382,7 @@ func TestSlashWithUnbondingDelegation(t *testing.T) {
 	// power decreased by 1 again, validator is out of stake
 	// validator should be in unbonding period
 	validator, _ = f.stakingKeeper.GetValidatorByConsAddr(f.sdkCtx, consAddr)
-	assert.Equal(t, validator.GetStatus(), sdk.Unbonding)
+	assert.Equal(t, validator.GetStatus(), types.Unbonding)
 }
 
 // tests Slash at a previous height with a redelegation
@@ -435,7 +415,7 @@ func TestSlashWithRedelegation(t *testing.T) {
 	oldNotBonded := f.bankKeeper.GetBalance(f.sdkCtx, notBondedPool.GetAddress(), bondDenom).Amount
 
 	// slash validator
-	f.sdkCtx = f.sdkCtx.WithBlockHeight(12).WithHeaderInfo(header.Info{Height: 12})
+	f.sdkCtx = f.sdkCtx.WithBlockHeight(12)
 	_, found := f.stakingKeeper.GetValidatorByConsAddr(f.sdkCtx, consAddr)
 	assert.Assert(t, found)
 
@@ -456,7 +436,7 @@ func TestSlashWithRedelegation(t *testing.T) {
 	oldBonded = f.bankKeeper.GetBalance(f.sdkCtx, bondedPool.GetAddress(), bondDenom).Amount
 
 	// read updating redelegation
-	rd, found = f.stakingKeeper.Redelegations.Get(f.sdkCtx, collections.Join3(addrDels[0].Bytes(), addrVals[0].Bytes(), addrVals[1].Bytes()))
+	rd, found = f.stakingKeeper.GetRedelegation(f.sdkCtx, addrDels[0], addrVals[0], addrVals[1])
 	assert.Assert(t, found)
 	assert.Assert(t, len(rd.Entries) == 1)
 	// read updated validator
@@ -493,7 +473,7 @@ func TestSlashWithRedelegation(t *testing.T) {
 	oldBonded = f.bankKeeper.GetBalance(f.sdkCtx, bondedPool.GetAddress(), bondDenom).Amount
 
 	// read updating redelegation
-	rd, found = f.stakingKeeper.Redelegations.Get(f.sdkCtx, collections.Join3(addrDels[0].Bytes(), addrVals[0].Bytes(), addrVals[1].Bytes()))
+	rd, found = f.stakingKeeper.GetRedelegation(f.sdkCtx, addrDels[0], addrVals[0], addrVals[1])
 	assert.Assert(t, found)
 	assert.Assert(t, len(rd.Entries) == 1)
 	// read updated validator
@@ -503,7 +483,7 @@ func TestSlashWithRedelegation(t *testing.T) {
 	assert.Equal(t, int64(4), validator.GetConsensusPower(f.stakingKeeper.PowerReduction(f.sdkCtx)))
 
 	// slash the validator again, by 100%
-	f.sdkCtx = f.sdkCtx.WithBlockHeight(12).WithHeaderInfo(header.Info{Height: 12})
+	f.sdkCtx = f.sdkCtx.WithBlockHeight(12)
 	_, found = f.stakingKeeper.GetValidatorByConsAddr(f.sdkCtx, consAddr)
 	assert.Assert(t, found)
 
@@ -524,7 +504,7 @@ func TestSlashWithRedelegation(t *testing.T) {
 	oldBonded = f.bankKeeper.GetBalance(f.sdkCtx, bondedPool.GetAddress(), bondDenom).Amount
 
 	// read updating redelegation
-	rd, found = f.stakingKeeper.Redelegations.Get(f.sdkCtx, collections.Join3(addrDels[0].Bytes(), addrVals[0].Bytes(), addrVals[1].Bytes()))
+	rd, found = f.stakingKeeper.GetRedelegation(f.sdkCtx, addrDels[0], addrVals[0], addrVals[1])
 	assert.Assert(t, found)
 	assert.Assert(t, len(rd.Entries) == 1)
 	// apply TM updates
@@ -532,14 +512,14 @@ func TestSlashWithRedelegation(t *testing.T) {
 	// read updated validator
 	// validator decreased to zero power, should be in unbonding period
 	validator, _ = f.stakingKeeper.GetValidatorByConsAddr(f.sdkCtx, consAddr)
-	assert.Equal(t, validator.GetStatus(), sdk.Unbonding)
+	assert.Equal(t, validator.GetStatus(), types.Unbonding)
 
 	// slash the validator again, by 100%
 	// no stake remains to be slashed
-	f.sdkCtx = f.sdkCtx.WithBlockHeight(12).WithHeaderInfo(header.Info{Height: 12})
+	f.sdkCtx = f.sdkCtx.WithBlockHeight(12)
 	// validator still in unbonding period
 	validator, _ = f.stakingKeeper.GetValidatorByConsAddr(f.sdkCtx, consAddr)
-	assert.Equal(t, validator.GetStatus(), sdk.Unbonding)
+	assert.Equal(t, validator.GetStatus(), types.Unbonding)
 
 	_, err = f.stakingKeeper.Slash(f.sdkCtx, consAddr, 10, 10, math.LegacyOneDec())
 	assert.NilError(t, err)
@@ -554,13 +534,13 @@ func TestSlashWithRedelegation(t *testing.T) {
 	assert.Assert(math.IntEq(t, oldNotBonded, notBondedPoolBalance))
 
 	// read updating redelegation
-	rd, found = f.stakingKeeper.Redelegations.Get(f.sdkCtx, collections.Join3(addrDels[0].Bytes(), addrVals[0].Bytes(), addrVals[1].Bytes()))
+	rd, found = f.stakingKeeper.GetRedelegation(f.sdkCtx, addrDels[0], addrVals[0], addrVals[1])
 	assert.Assert(t, found)
 	assert.Assert(t, len(rd.Entries) == 1)
 	// read updated validator
 	// power still zero, still in unbonding period
 	validator, _ = f.stakingKeeper.GetValidatorByConsAddr(f.sdkCtx, consAddr)
-	assert.Equal(t, validator.GetStatus(), sdk.Unbonding)
+	assert.Equal(t, validator.GetStatus(), types.Unbonding)
 }
 
 // tests Slash at a previous height with both an unbonding delegation and a redelegation
@@ -603,7 +583,7 @@ func TestSlashBoth(t *testing.T) {
 	oldBonded := f.bankKeeper.GetBalance(f.sdkCtx, bondedPool.GetAddress(), bondDenom).Amount
 	oldNotBonded := f.bankKeeper.GetBalance(f.sdkCtx, notBondedPool.GetAddress(), bondDenom).Amount
 	// slash validator
-	f.sdkCtx = f.sdkCtx.WithBlockHeight(12).WithHeaderInfo(header.Info{Height: 12})
+	f.sdkCtx = f.sdkCtx.WithBlockHeight(12)
 	_, found := f.stakingKeeper.GetValidatorByConsAddr(f.sdkCtx, sdk.GetConsAddress(PKs[0]))
 	assert.Assert(t, found)
 	consAddr0 := sdk.ConsAddress(PKs[0].Address())
@@ -625,7 +605,7 @@ func TestSlashBoth(t *testing.T) {
 	assert.Assert(math.IntEq(t, oldNotBonded.Sub(burnedNotBondedAmount), notBondedPoolBalance))
 
 	// read updating redelegation
-	rdA, found = f.stakingKeeper.Redelegations.Get(f.sdkCtx, collections.Join3(addrDels[0].Bytes(), addrVals[0].Bytes(), addrVals[1].Bytes()))
+	rdA, found = f.stakingKeeper.GetRedelegation(f.sdkCtx, addrDels[0], addrVals[0], addrVals[1])
 	assert.Assert(t, found)
 	assert.Assert(t, len(rdA.Entries) == 1)
 	// read updated validator
@@ -648,120 +628,4 @@ func TestSlashAmount(t *testing.T) {
 	noBurned, err := f.stakingKeeper.Slash(f.sdkCtx, sdk.ConsAddress(addrVals[0]), f.sdkCtx.BlockHeight(), 10, fraction)
 	assert.NilError(t, err)
 	assert.Assert(t, math.NewInt(0).Equal(noBurned))
-}
-
-// TestFixAvoidFullSlashPenalty fixes the following issue: https://github.com/cosmos/cosmos-sdk/issues/20641
-func TestFixAvoidFullSlashPenalty(t *testing.T) {
-	// setup
-	var authKeeper authkeeper.AccountKeeperI
-	var stakingKeeper *keeper.Keeper
-	var bankKeeper bankkeeper.Keeper
-	var slashKeeper slashingkeeper.Keeper
-	var distrKeeper distributionkeeper.Keeper
-	app, err := simtestutil.Setup(depinject.Configs(
-		depinject.Supply(log.NewNopLogger()),
-		configurator.NewAppConfig(
-			configurator.AccountsModule(),
-			configurator.AuthModule(),
-			configurator.BankModule(),
-			configurator.ConsensusModule(),
-			configurator.StakingModule(),
-			configurator.SlashingModule(),
-			configurator.ProtocolPoolModule(),
-			configurator.DistributionModule(),
-		),
-	), &authKeeper, &stakingKeeper, &bankKeeper, &slashKeeper, &distrKeeper)
-	require.NoError(t, err)
-	ctx := app.BaseApp.NewContext(false)
-	stakingMsgServer := keeper.NewMsgServerImpl(stakingKeeper)
-	bondDenom, err := stakingKeeper.BondDenom(ctx)
-	require.NoError(t, err)
-	// create 2 evil validators, controlled by attacker
-	evilValPubKey := secp256k1.GenPrivKey().PubKey()
-	evilValPubKey2 := secp256k1.GenPrivKey().PubKey()
-	// attacker user account
-	badtestAcc := sdk.AccAddress("addr1_______________")
-	// normal users who stakes on evilValAddr1
-	testAcc1 := sdk.AccAddress("addr2_______________")
-	testAcc2 := sdk.AccAddress("addr3_______________")
-	createAccount(t, ctx, authKeeper, badtestAcc)
-	createAccount(t, ctx, authKeeper, testAcc1)
-	createAccount(t, ctx, authKeeper, testAcc2)
-	// fund all accounts
-	testCoins := sdk.NewCoins(sdk.NewCoin(bondDenom, stakingKeeper.TokensFromConsensusPower(ctx, 1)))
-	require.NoError(t, banktestutil.FundAccount(ctx, bankKeeper, badtestAcc, testCoins))
-	require.NoError(t, banktestutil.FundAccount(ctx, bankKeeper, testAcc1, testCoins))
-	require.NoError(t, banktestutil.FundAccount(ctx, bankKeeper, testAcc2, testCoins))
-	// create evilValAddr1 for normal staking operations
-	evilValAddr1 := sdk.ValAddress(evilValPubKey.Address())
-	createAccount(t, ctx, authKeeper, evilValAddr1.Bytes())
-	require.NoError(t, banktestutil.FundAccount(ctx, bankKeeper, sdk.AccAddress(evilValAddr1), testCoins))
-	createValMsg1, _ := types.NewMsgCreateValidator(
-		evilValAddr1.String(), evilValPubKey, testCoins[0], types.Description{Details: "test"}, types.NewCommissionRates(math.LegacyNewDecWithPrec(5, 1), math.LegacyNewDecWithPrec(5, 1), math.LegacyNewDec(0)), math.OneInt())
-	_, err = stakingMsgServer.CreateValidator(ctx, createValMsg1)
-	require.NoError(t, err)
-	// very small amount coin for evilValAddr2
-	smallCoins := sdk.NewCoins(sdk.NewCoin(bondDenom, math.NewInt(1)))
-	// create evilValAddr2 to circumvent slashing
-	evilValAddr2 := sdk.ValAddress(evilValPubKey2.Address())
-	require.NoError(t, banktestutil.FundAccount(ctx, bankKeeper, sdk.AccAddress(evilValAddr2), smallCoins))
-	createValMsg3, _ := types.NewMsgCreateValidator(
-		evilValAddr2.String(), evilValPubKey2, smallCoins[0], types.Description{Details: "test"}, types.NewCommissionRates(math.LegacyNewDecWithPrec(5, 1), math.LegacyNewDecWithPrec(5, 1), math.LegacyNewDec(0)), math.OneInt())
-	createAccount(t, ctx, authKeeper, evilValAddr2.Bytes())
-	_, err = stakingMsgServer.CreateValidator(ctx, createValMsg3)
-	require.NoError(t, err)
-	// next block
-	ctx = ctx.WithBlockHeight(app.LastBlockHeight() + 1).WithHeaderInfo(header.Info{Height: app.LastBlockHeight() + 1})
-	ctx, err = simtestutil.NextBlock(app, ctx, time.Duration(1))
-	require.NoError(t, err)
-	// all accs delegate to evilValAddr1
-	delMsg := types.NewMsgDelegate(badtestAcc.String(), evilValAddr1.String(), testCoins[0])
-	_, err = stakingMsgServer.Delegate(ctx, delMsg)
-	require.NoError(t, err)
-	delMsg = types.NewMsgDelegate(testAcc1.String(), evilValAddr1.String(), testCoins[0])
-	_, err = stakingMsgServer.Delegate(ctx, delMsg)
-	require.NoError(t, err)
-	delMsg = types.NewMsgDelegate(testAcc2.String(), evilValAddr1.String(), testCoins[0])
-	_, err = stakingMsgServer.Delegate(ctx, delMsg)
-	require.NoError(t, err)
-	// next block
-	ctx, err = simtestutil.NextBlock(app, ctx, time.Duration(1))
-	require.NoError(t, err)
-	// 1. badtestAcc redelegates from evilValAddr1 to evilValAddr2
-	redelMsg := types.NewMsgBeginRedelegate(badtestAcc.String(), evilValAddr1.String(), evilValAddr2.String(), smallCoins[0])
-	_, err = stakingMsgServer.BeginRedelegate(ctx, redelMsg)
-	require.NoError(t, err)
-	// 2. evilValAddr2 undelegates its self-delegation and jail themselves
-	undelMsg := types.NewMsgUndelegate(sdk.AccAddress(evilValAddr2).String(), evilValAddr2.String(), smallCoins[0])
-	_, err = stakingMsgServer.Undelegate(ctx, undelMsg)
-	require.NoError(t, err)
-	// assert evilValAddr2 is jailed
-	evilVal2, err := stakingKeeper.GetValidator(ctx, evilValAddr2)
-	require.NoError(t, err)
-	require.True(t, evilVal2.Jailed)
-	// next block
-	ctx, err = simtestutil.NextBlock(app, ctx, time.Duration(1))
-	require.NoError(t, err)
-	// assert invariants
-	_, stop := keeper.AllInvariants(stakingKeeper)(ctx)
-	require.False(t, stop)
-	_, stop = bankkeeper.AllInvariants(bankKeeper)(ctx)
-	require.False(t, stop)
-	_, stop = distributionkeeper.AllInvariants(distrKeeper)(ctx)
-	require.False(t, stop)
-	// evilValAddr1 is bad!
-	// lets slash evilValAddr1 with a 100% penalty
-	evilVal, err := stakingKeeper.GetValidator(ctx, evilValAddr1)
-	require.NoError(t, err)
-	evilValConsAddr, err := evilVal.GetConsAddr()
-	require.NoError(t, err)
-	evilPower := stakingKeeper.TokensToConsensusPower(ctx, evilVal.Tokens)
-	err = slashKeeper.Slash(ctx, evilValConsAddr, math.LegacyMustNewDecFromStr("1.0"), evilPower, 3)
-	require.NoError(t, err)
-}
-
-func createAccount(t *testing.T, ctx context.Context, k authkeeper.AccountKeeperI, addr sdk.AccAddress) {
-	t.Helper()
-	acc := k.NewAccountWithAddress(ctx, addr)
-	k.SetAccount(ctx, acc)
 }

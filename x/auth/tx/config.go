@@ -1,11 +1,8 @@
 package tx
 
 import (
-	"errors"
 	"fmt"
 
-	"cosmossdk.io/core/address"
-	txdecode "cosmossdk.io/x/tx/decode"
 	txsigning "cosmossdk.io/x/tx/signing"
 	"cosmossdk.io/x/tx/signing/aminojson"
 	"cosmossdk.io/x/tx/signing/direct"
@@ -16,6 +13,7 @@ import (
 	"github.com/cosmos/cosmos-sdk/codec"
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	signingtypes "github.com/cosmos/cosmos-sdk/types/tx/signing"
+	authcodec "github.com/cosmos/cosmos-sdk/x/auth/codec"
 )
 
 type config struct {
@@ -26,7 +24,6 @@ type config struct {
 	jsonEncoder    sdk.TxEncoder
 	protoCodec     codec.Codec
 	signingContext *txsigning.Context
-	txDecoder      *txdecode.Decoder
 }
 
 // ConfigOptions define the configuration of a TxConfig when calling NewTxConfigWithOptions.
@@ -76,15 +73,12 @@ var DefaultSignModes = []signingtypes.SignMode{
 // We prefer to use depinject to provide client.TxConfig, but we permit this constructor usage. Within the SDK,
 // this constructor is primarily used in tests, but also sees usage in app chains like:
 // https://github.com/evmos/evmos/blob/719363fbb92ff3ea9649694bd088e4c6fe9c195f/encoding/config.go#L37
-func NewTxConfig(protoCodec codec.Codec, addressCodec, validatorAddressCodec address.Codec, enabledSignModes []signingtypes.SignMode, customSignModes ...txsigning.SignModeHandler,
+func NewTxConfig(protoCodec codec.Codec, enabledSignModes []signingtypes.SignMode,
+	customSignModes ...txsigning.SignModeHandler,
 ) client.TxConfig {
 	txConfig, err := NewTxConfigWithOptions(protoCodec, ConfigOptions{
 		EnabledSignModes: enabledSignModes,
 		CustomSignModes:  customSignModes,
-		SigningOptions: &txsigning.Options{
-			AddressCodec:          addressCodec,
-			ValidatorAddressCodec: validatorAddressCodec,
-		},
 	})
 	if err != nil {
 		panic(err)
@@ -92,13 +86,14 @@ func NewTxConfig(protoCodec codec.Codec, addressCodec, validatorAddressCodec add
 	return txConfig
 }
 
-// NewSigningOptions returns signing options used by x/tx. This includes account and
+// NewDefaultSigningOptions returns the sdk default signing options used by x/tx.  This includes account and
 // validator address prefix enabled codecs.
-func NewSigningOptions(addressCodec, validatorAddressCodec address.Codec) *txsigning.Options {
+func NewDefaultSigningOptions() (*txsigning.Options, error) {
+	sdkConfig := sdk.GetConfig()
 	return &txsigning.Options{
-		AddressCodec:          addressCodec,
-		ValidatorAddressCodec: validatorAddressCodec,
-	}
+		AddressCodec:          authcodec.NewBech32Codec(sdkConfig.GetBech32AccountAddrPrefix()),
+		ValidatorAddressCodec: authcodec.NewBech32Codec(sdkConfig.GetBech32ValidatorAddrPrefix()),
+	}, nil
 }
 
 // NewSigningHandlerMap returns a new txsigning.HandlerMap using the provided ConfigOptions.
@@ -107,7 +102,10 @@ func NewSigningOptions(addressCodec, validatorAddressCodec address.Codec) *txsig
 func NewSigningHandlerMap(configOpts ConfigOptions) (*txsigning.HandlerMap, error) {
 	var err error
 	if configOpts.SigningOptions == nil {
-		return nil, errors.New("signing options not provided")
+		configOpts.SigningOptions, err = NewDefaultSigningOptions()
+		if err != nil {
+			return nil, err
+		}
 	}
 	if configOpts.SigningContext == nil {
 		configOpts.SigningContext, err = txsigning.NewContext(*configOpts.SigningOptions)
@@ -149,7 +147,7 @@ func NewSigningHandlerMap(configOpts ConfigOptions) (*txsigning.HandlerMap, erro
 				TypeResolver:        signingOpts.TypeResolver,
 			})
 			if configOpts.TextualCoinMetadataQueryFn == nil {
-				return nil, errors.New("cannot enable SIGN_MODE_TEXTUAL without a TextualCoinMetadataQueryFn")
+				return nil, fmt.Errorf("cannot enable SIGN_MODE_TEXTUAL without a TextualCoinMetadataQueryFn")
 			}
 			if err != nil {
 				return nil, err
@@ -174,11 +172,26 @@ func NewTxConfigWithOptions(protoCodec codec.Codec, configOptions ConfigOptions)
 		jsonDecoder: configOptions.JSONDecoder,
 		jsonEncoder: configOptions.JSONEncoder,
 	}
+	if configOptions.ProtoDecoder == nil {
+		txConfig.decoder = DefaultTxDecoder(protoCodec)
+	}
+	if configOptions.ProtoEncoder == nil {
+		txConfig.encoder = DefaultTxEncoder()
+	}
+	if configOptions.JSONDecoder == nil {
+		txConfig.jsonDecoder = DefaultJSONTxDecoder(protoCodec)
+	}
+	if configOptions.JSONEncoder == nil {
+		txConfig.jsonEncoder = DefaultJSONTxEncoder(protoCodec)
+	}
 
 	var err error
 	if configOptions.SigningContext == nil {
 		if configOptions.SigningOptions == nil {
-			return nil, errors.New("signing options not provided")
+			configOptions.SigningOptions, err = NewDefaultSigningOptions()
+			if err != nil {
+				return nil, err
+			}
 		}
 		if configOptions.SigningOptions.FileResolver == nil {
 			configOptions.SigningOptions.FileResolver = protoCodec.InterfaceRegistry()
@@ -188,29 +201,6 @@ func NewTxConfigWithOptions(protoCodec codec.Codec, configOptions ConfigOptions)
 			return nil, err
 		}
 	}
-
-	if configOptions.ProtoDecoder == nil {
-		dec, err := txdecode.NewDecoder(txdecode.Options{
-			SigningContext: configOptions.SigningContext,
-			ProtoCodec:     protoCodec,
-		},
-		)
-		if err != nil {
-			return nil, err
-		}
-		txConfig.decoder = txV2toInterface(configOptions.SigningOptions.AddressCodec, protoCodec, dec)
-		txConfig.txDecoder = dec
-	}
-	if configOptions.ProtoEncoder == nil {
-		txConfig.encoder = DefaultTxEncoder()
-	}
-	if configOptions.JSONDecoder == nil {
-		txConfig.jsonDecoder = DefaultJSONTxDecoder(configOptions.SigningOptions.AddressCodec, protoCodec, txConfig.txDecoder)
-	}
-	if configOptions.JSONEncoder == nil {
-		txConfig.jsonEncoder = DefaultJSONTxEncoder(protoCodec)
-	}
-
 	txConfig.signingContext = configOptions.SigningContext
 
 	if configOptions.SigningHandler != nil {
@@ -227,17 +217,17 @@ func NewTxConfigWithOptions(protoCodec codec.Codec, configOptions ConfigOptions)
 }
 
 func (g config) NewTxBuilder() client.TxBuilder {
-	return newBuilder(g.signingContext.AddressCodec(), g.txDecoder, g.protoCodec)
+	return newBuilder(g.protoCodec)
 }
 
 // WrapTxBuilder returns a builder from provided transaction
 func (g config) WrapTxBuilder(newTx sdk.Tx) (client.TxBuilder, error) {
-	gogoTx, ok := newTx.(*gogoTxWrapper)
+	newBuilder, ok := newTx.(*wrapper)
 	if !ok {
-		return nil, fmt.Errorf("expected %T, got %T", &gogoTxWrapper{}, newTx)
+		return nil, fmt.Errorf("expected %T, got %T", &wrapper{}, newTx)
 	}
 
-	return newBuilderFromDecodedTx(g.signingContext.AddressCodec(), g.txDecoder, g.protoCodec, gogoTx)
+	return newBuilder, nil
 }
 
 func (g config) SignModeHandler() *txsigning.HandlerMap {
@@ -262,14 +252,4 @@ func (g config) TxJSONDecoder() sdk.TxDecoder {
 
 func (g config) SigningContext() *txsigning.Context {
 	return g.signingContext
-}
-
-func txV2toInterface(addrCodec address.Codec, cdc codec.BinaryCodec, decoder *txdecode.Decoder) func([]byte) (sdk.Tx, error) {
-	return func(txBytes []byte) (sdk.Tx, error) {
-		decodedTx, err := decoder.Decode(txBytes)
-		if err != nil {
-			return nil, err
-		}
-		return newWrapperFromDecodedTx(addrCodec, cdc, decodedTx)
-	}
 }

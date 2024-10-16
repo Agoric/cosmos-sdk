@@ -3,7 +3,6 @@ package server
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"strconv"
 	"strings"
@@ -21,7 +20,8 @@ import (
 
 	"github.com/cosmos/cosmos-sdk/client"
 	"github.com/cosmos/cosmos-sdk/client/flags"
-	"github.com/cosmos/cosmos-sdk/client/rpc"
+	"github.com/cosmos/cosmos-sdk/client/grpc/cmtservice"
+	rpc "github.com/cosmos/cosmos-sdk/client/rpc"
 	cryptocodec "github.com/cosmos/cosmos-sdk/crypto/codec"
 	"github.com/cosmos/cosmos-sdk/server/types"
 	sdk "github.com/cosmos/cosmos-sdk/types"
@@ -40,11 +40,8 @@ func StatusCommand() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			node, err := clientCtx.GetNode()
-			if err != nil {
-				return err
-			}
-			status, err := node.Status(context.Background())
+
+			status, err := cmtservice.GetNodeStatus(context.Background(), clientCtx)
 			if err != nil {
 				return err
 			}
@@ -158,7 +155,7 @@ func VersionCmd() *cobra.Command {
 				BlockProtocol uint64
 				P2PProtocol   uint64
 			}{
-				CometBFT:      cmtversion.CMTSemVer,
+				CometBFT:      cmtversion.TMCoreSemVer,
 				ABCI:          cmtversion.ABCIVersion,
 				BlockProtocol: cmtversion.BlockProtocol,
 				P2PProtocol:   cmtversion.P2PProtocol,
@@ -220,7 +217,7 @@ for. Each module documents its respective events under 'xx_events.md'.
 // QueryBlockCmd implements the default command for a Block query.
 func QueryBlockCmd() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   "block --type={height|hash} [height|hash]",
+		Use:   "block --type=[height|hash] [height|hash]",
 		Short: "Query for a committed block by height, hash, or event(s)",
 		Long:  "Query for a specific committed block using the CometBFT RPC `block` and `block_by_hash` method",
 		Example: strings.TrimSpace(fmt.Sprintf(`
@@ -281,7 +278,7 @@ $ %s query block --%s=%s <hash>
 			case auth.TypeHash:
 
 				if args[0] == "" {
-					return errors.New("argument should be a tx hash")
+					return fmt.Errorf("argument should be a tx hash")
 				}
 
 				// If hash is given, then query the tx by hash.
@@ -363,12 +360,11 @@ func QueryBlockResultsCmd() *cobra.Command {
 	return cmd
 }
 
-func BootstrapStateCmd[T types.Application](appCreator types.AppCreator[T]) *cobra.Command {
+func BootstrapStateCmd(appCreator types.AppCreator) *cobra.Command {
 	cmd := &cobra.Command{
-		Use:     "bootstrap-state",
-		Short:   "Bootstrap CometBFT state at an arbitrary block height using a light client",
-		Args:    cobra.NoArgs,
-		Example: "bootstrap-state --height 1000000",
+		Use:   "bootstrap-state",
+		Short: "Bootstrap CometBFT state at an arbitrary block height using a light client",
+		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			serverCtx := GetServerContextFromCmd(cmd)
 			logger := log.NewLogger(cmd.OutOrStdout())
@@ -380,7 +376,7 @@ func BootstrapStateCmd[T types.Application](appCreator types.AppCreator[T]) *cob
 			}
 			if height == 0 {
 				home := serverCtx.Viper.GetString(flags.FlagHome)
-				db, err := OpenDB(home, GetAppDBBackend(serverCtx.Viper))
+				db, err := openDB(home, GetAppDBBackend(serverCtx.Viper))
 				if err != nil {
 					return err
 				}
@@ -389,7 +385,7 @@ func BootstrapStateCmd[T types.Application](appCreator types.AppCreator[T]) *cob
 				height = app.CommitMultiStore().LastCommitID().Version
 			}
 
-			return node.BootstrapState(cmd.Context(), cfg, cmtcfg.DefaultDBProvider, getGenDocProvider(cfg), uint64(height), nil)
+			return node.BootstrapStateWithGenProvider(cmd.Context(), cfg, cmtcfg.DefaultDBProvider, getGenDocProvider(cfg), uint64(height), nil)
 		},
 	}
 

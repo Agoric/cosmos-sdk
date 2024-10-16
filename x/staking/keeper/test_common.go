@@ -5,14 +5,14 @@ import (
 	"context"
 
 	storetypes "cosmossdk.io/store/types"
-	"cosmossdk.io/x/staking/types"
 
 	sdk "github.com/cosmos/cosmos-sdk/types"
+	"github.com/cosmos/cosmos-sdk/x/staking/types"
 )
 
 // ValidatorByPowerIndexExists does a certain by-power index record exist
 func ValidatorByPowerIndexExists(ctx context.Context, keeper *Keeper, power []byte) bool {
-	store := keeper.KVStoreService.OpenKVStore(ctx)
+	store := keeper.storeService.OpenKVStore(ctx)
 	has, err := store.Has(power)
 	if err != nil {
 		panic(err)
@@ -28,7 +28,7 @@ func TestingUpdateValidator(keeper *Keeper, ctx sdk.Context, validator types.Val
 	}
 
 	// Remove any existing power key for validator.
-	store := keeper.KVStoreService.OpenKVStore(ctx)
+	store := keeper.storeService.OpenKVStore(ctx)
 	deleted := false
 
 	iterator, err := store.Iterator(types.ValidatorsByPowerIndexKey, storetypes.PrefixEndBytes(types.ValidatorsByPowerIndexKey))

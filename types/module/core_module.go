@@ -1,47 +1,51 @@
 package module
 
 import (
-	"context"
 	"encoding/json"
 
+	abci "github.com/cometbft/cometbft/abci/types"
 	"github.com/grpc-ecosystem/grpc-gateway/runtime"
 	"github.com/spf13/cobra"
 
 	"cosmossdk.io/core/appmodule"
 	"cosmossdk.io/core/genesis"
-	"cosmossdk.io/core/registry"
 	storetypes "cosmossdk.io/store/types"
 
 	"github.com/cosmos/cosmos-sdk/client"
+	"github.com/cosmos/cosmos-sdk/codec"
+	codectypes "github.com/cosmos/cosmos-sdk/codec/types"
 	sdk "github.com/cosmos/cosmos-sdk/types"
 )
 
 var (
-	_ appmodule.AppModule = coreAppModuleAdaptor{}
+	_ appmodule.AppModule = coreAppModuleBasicAdaptor{}
 
-	_ HasAminoCodec                   = coreAppModuleAdaptor{}
-	_ HasGRPCGateway                  = coreAppModuleAdaptor{}
-	_ appmodule.HasRegisterInterfaces = coreAppModuleAdaptor{}
-	_ HasABCIGenesis                  = coreAppModuleAdaptor{}
-	_ HasServices                     = coreAppModuleAdaptor{}
+	_ AppModuleBasic = coreAppModuleBasicAdaptor{}
+	_ HasABCIGenesis = coreAppModuleBasicAdaptor{}
+	_ HasServices    = coreAppModuleBasicAdaptor{}
 )
 
 // CoreAppModuleAdaptor wraps the core API module as an AppModule that this version of the SDK can use.
 func CoreAppModuleAdaptor(name string, module appmodule.AppModule) AppModule {
-	return coreAppModuleAdaptor{
+	return coreAppModuleBasicAdaptor{
 		name:   name,
 		module: module,
 	}
 }
 
-type coreAppModuleAdaptor struct {
+// CoreAppModuleBasicAdaptor wraps the core API module as an AppModule that this version of the SDK can use.
+func CoreAppModuleBasicAdaptor(name string, module appmodule.AppModule) AppModule {
+	return CoreAppModuleAdaptor(name, module)
+}
+
+type coreAppModuleBasicAdaptor struct {
 	name   string
 	module appmodule.AppModule
 }
 
 // DefaultGenesis implements HasGenesis
-func (c coreAppModuleAdaptor) DefaultGenesis() json.RawMessage {
-	if mod, ok := c.module.(appmodule.HasGenesisAuto); ok {
+func (c coreAppModuleBasicAdaptor) DefaultGenesis(cdc codec.JSONCodec) json.RawMessage {
+	if mod, ok := c.module.(appmodule.HasGenesis); ok {
 		target := genesis.RawJSONTarget{}
 		err := mod.DefaultGenesis(target.Target())
 		if err != nil {
@@ -57,19 +61,15 @@ func (c coreAppModuleAdaptor) DefaultGenesis() json.RawMessage {
 	}
 
 	if mod, ok := c.module.(HasGenesisBasics); ok {
-		return mod.DefaultGenesis()
-	}
-
-	if mod, ok := c.module.(HasGenesis); ok {
-		return mod.DefaultGenesis()
+		return mod.DefaultGenesis(cdc)
 	}
 
 	return nil
 }
 
 // ValidateGenesis implements HasGenesis
-func (c coreAppModuleAdaptor) ValidateGenesis(bz json.RawMessage) error {
-	if mod, ok := c.module.(appmodule.HasGenesisAuto); ok {
+func (c coreAppModuleBasicAdaptor) ValidateGenesis(cdc codec.JSONCodec, txConfig client.TxEncodingConfig, bz json.RawMessage) error {
+	if mod, ok := c.module.(appmodule.HasGenesis); ok {
 		source, err := genesis.SourceFromRawJSON(bz)
 		if err != nil {
 			return err
@@ -81,84 +81,73 @@ func (c coreAppModuleAdaptor) ValidateGenesis(bz json.RawMessage) error {
 	}
 
 	if mod, ok := c.module.(HasGenesisBasics); ok {
-		return mod.ValidateGenesis(bz)
-	}
-
-	if mod, ok := c.module.(HasGenesis); ok {
-		return mod.ValidateGenesis(bz)
+		return mod.ValidateGenesis(cdc, txConfig, bz)
 	}
 
 	return nil
 }
 
 // ExportGenesis implements HasGenesis
-func (c coreAppModuleAdaptor) ExportGenesis(ctx context.Context) (json.RawMessage, error) {
-	if module, ok := c.module.(appmodule.HasGenesisAuto); ok {
-		ctx := sdk.UnwrapSDKContext(ctx).WithGasMeter(storetypes.NewInfiniteGasMeter()) // avoid race conditions
+func (c coreAppModuleBasicAdaptor) ExportGenesis(ctx sdk.Context, cdc codec.JSONCodec) json.RawMessage {
+	if module, ok := c.module.(appmodule.HasGenesis); ok {
+		ctx := ctx.WithGasMeter(storetypes.NewInfiniteGasMeter()) // avoid race conditions
 		target := genesis.RawJSONTarget{}
 		err := module.ExportGenesis(ctx, target.Target())
 		if err != nil {
-			return nil, err
+			panic(err)
 		}
 
 		rawJSON, err := target.JSON()
 		if err != nil {
-			return nil, err
+			panic(err)
 		}
 
-		return rawJSON, nil
-	}
-
-	if mod, ok := c.module.(HasABCIGenesis); ok {
-		return mod.ExportGenesis(ctx)
+		return rawJSON
 	}
 
 	if mod, ok := c.module.(HasGenesis); ok {
-		eg, err := mod.ExportGenesis(ctx)
-		if err != nil {
-			return nil, err
-		}
-
-		return eg, nil
+		return mod.ExportGenesis(ctx, cdc)
 	}
 
-	return nil, nil
+	if mod, ok := c.module.(HasABCIGenesis); ok {
+		return mod.ExportGenesis(ctx, cdc)
+	}
+
+	return nil
 }
 
 // InitGenesis implements HasGenesis
-func (c coreAppModuleAdaptor) InitGenesis(ctx context.Context, bz json.RawMessage) ([]ValidatorUpdate, error) {
-	if module, ok := c.module.(appmodule.HasGenesisAuto); ok {
+func (c coreAppModuleBasicAdaptor) InitGenesis(ctx sdk.Context, cdc codec.JSONCodec, bz json.RawMessage) []abci.ValidatorUpdate {
+	if module, ok := c.module.(appmodule.HasGenesis); ok {
 		// core API genesis
 		source, err := genesis.SourceFromRawJSON(bz)
 		if err != nil {
-			return nil, err
+			panic(err)
 		}
 
-		if err = module.InitGenesis(ctx, source); err != nil {
-			return nil, err
+		err = module.InitGenesis(ctx, source)
+		if err != nil {
+			panic(err)
 		}
-	}
-
-	if mod, ok := c.module.(HasABCIGenesis); ok {
-		return mod.InitGenesis(ctx, bz)
 	}
 
 	if mod, ok := c.module.(HasGenesis); ok {
-		if err := mod.InitGenesis(ctx, bz); err != nil {
-			return nil, err
-		}
+		mod.InitGenesis(ctx, cdc, bz)
+		return nil
 	}
-
-	return nil, nil
+	if mod, ok := c.module.(HasABCIGenesis); ok {
+		return mod.InitGenesis(ctx, cdc, bz)
+	}
+	return nil
 }
 
-// Name implements legacy Name() interface
-// Kept for legacy reasons
-func (c coreAppModuleAdaptor) Name() string {
+// Name implements AppModuleBasic
+func (c coreAppModuleBasicAdaptor) Name() string {
 	return c.name
 }
 
-func (c coreAppModuleAdaptor) GetQueryCmd() *cobra.Command {
+// GetQueryCmd implements AppModuleBasic
+func (c coreAppModuleBasicAdaptor) GetQueryCmd() *cobra.Command {
 	if mod, ok := c.module.(interface {
 		GetQueryCmd() *cobra.Command
 	}); ok {
@@ -168,7 +157,8 @@ func (c coreAppModuleAdaptor) GetQueryCmd() *cobra.Command {
 	return nil
 }
 
-func (c coreAppModuleAdaptor) GetTxCmd() *cobra.Command {
+// GetTxCmd implements AppModuleBasic
+func (c coreAppModuleBasicAdaptor) GetTxCmd() *cobra.Command {
 	if mod, ok := c.module.(interface {
 		GetTxCmd() *cobra.Command
 	}); ok {
@@ -178,8 +168,8 @@ func (c coreAppModuleAdaptor) GetTxCmd() *cobra.Command {
 	return nil
 }
 
-// RegisterGRPCGatewayRoutes implements HasGRPCGateway
-func (c coreAppModuleAdaptor) RegisterGRPCGatewayRoutes(ctx client.Context, mux *runtime.ServeMux) {
+// RegisterGRPCGatewayRoutes implements AppModuleBasic
+func (c coreAppModuleBasicAdaptor) RegisterGRPCGatewayRoutes(ctx client.Context, mux *runtime.ServeMux) {
 	if mod, ok := c.module.(interface {
 		RegisterGRPCGatewayRoutes(context client.Context, mux *runtime.ServeMux)
 	}); ok {
@@ -187,41 +177,34 @@ func (c coreAppModuleAdaptor) RegisterGRPCGatewayRoutes(ctx client.Context, mux 
 	}
 }
 
-// RegisterInterfaces implements HasRegisterInterfaces
-func (c coreAppModuleAdaptor) RegisterInterfaces(reg registry.InterfaceRegistrar) {
+// RegisterInterfaces implements AppModuleBasic
+func (c coreAppModuleBasicAdaptor) RegisterInterfaces(registry codectypes.InterfaceRegistry) {
 	if mod, ok := c.module.(interface {
-		RegisterInterfaces(registry.InterfaceRegistrar)
+		RegisterInterfaces(registry codectypes.InterfaceRegistry)
 	}); ok {
-		mod.RegisterInterfaces(reg)
+		mod.RegisterInterfaces(registry)
 	}
 }
 
-// RegisterLegacyAminoCodec implements HasAminoCodec
-func (c coreAppModuleAdaptor) RegisterLegacyAminoCodec(amino registry.AminoRegistrar) {
+// RegisterLegacyAminoCodec implements AppModuleBasic
+func (c coreAppModuleBasicAdaptor) RegisterLegacyAminoCodec(amino *codec.LegacyAmino) {
 	if mod, ok := c.module.(interface {
-		RegisterLegacyAminoCodec(amino registry.AminoRegistrar)
+		RegisterLegacyAminoCodec(amino *codec.LegacyAmino)
 	}); ok {
 		mod.RegisterLegacyAminoCodec(amino)
 	}
 }
 
 // RegisterServices implements HasServices
-func (c coreAppModuleAdaptor) RegisterServices(cfg Configurator) {
-	if module, ok := c.module.(hasServicesV1); ok {
+func (c coreAppModuleBasicAdaptor) RegisterServices(cfg Configurator) {
+	if module, ok := c.module.(appmodule.HasServices); ok {
 		err := module.RegisterServices(cfg)
-		if err != nil {
-			panic(err)
-		}
-	}
-
-	if module, ok := c.module.(appmodule.HasMigrations); ok {
-		err := module.RegisterMigrations(cfg)
 		if err != nil {
 			panic(err)
 		}
 	}
 }
 
-func (c coreAppModuleAdaptor) IsOnePerModuleType() {}
+func (c coreAppModuleBasicAdaptor) IsOnePerModuleType() {}
 
-func (c coreAppModuleAdaptor) IsAppModule() {}
+func (c coreAppModuleBasicAdaptor) IsAppModule() {}

@@ -4,15 +4,11 @@ import (
 	"context"
 	"fmt"
 
-	cmtabcitypes "github.com/cometbft/cometbft/api/cometbft/abci/v1"
-	cmtproto "github.com/cometbft/cometbft/api/cometbft/types/v1"
-	cmttypes "github.com/cometbft/cometbft/types"
+	cmtabcitypes "github.com/cometbft/cometbft/abci/types"
+	cmtproto "github.com/cometbft/cometbft/proto/tendermint/types"
+	dbm "github.com/cosmos/cosmos-db"
 
-	"cosmossdk.io/collections"
-	"cosmossdk.io/core/address"
 	"cosmossdk.io/core/appmodule"
-	corestore "cosmossdk.io/core/store"
-	coretesting "cosmossdk.io/core/testing"
 	"cosmossdk.io/log"
 	"cosmossdk.io/store"
 	"cosmossdk.io/store/metrics"
@@ -26,12 +22,12 @@ import (
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	"github.com/cosmos/cosmos-sdk/types/module"
 	authtx "github.com/cosmos/cosmos-sdk/x/auth/tx"
+	authtypes "github.com/cosmos/cosmos-sdk/x/auth/types"
+	consensusparamkeeper "github.com/cosmos/cosmos-sdk/x/consensus/keeper"
+	consensusparamtypes "github.com/cosmos/cosmos-sdk/x/consensus/types"
 )
 
-const (
-	appName   = "integration-app"
-	consensus = "consensus"
-)
+const appName = "integration-app"
 
 // App is a test application that can be used to test the integration of modules.
 type App struct {
@@ -50,33 +46,28 @@ func NewIntegrationApp(
 	logger log.Logger,
 	keys map[string]*storetypes.KVStoreKey,
 	appCodec codec.Codec,
-	addressCodec address.Codec,
-	validatorCodec address.Codec,
 	modules map[string]appmodule.AppModule,
-	msgRouter *baseapp.MsgServiceRouter,
-	grpcRouter *baseapp.GRPCQueryRouter,
 	baseAppOptions ...func(*baseapp.BaseApp),
 ) *App {
-	db := coretesting.NewMemDB()
+	db := dbm.NewMemDB()
 
 	interfaceRegistry := codectypes.NewInterfaceRegistry()
 	moduleManager := module.NewManagerFromMap(modules)
-	moduleManager.RegisterInterfaces(interfaceRegistry)
+	basicModuleManager := module.NewBasicManagerFromManager(moduleManager, nil)
+	basicModuleManager.RegisterInterfaces(interfaceRegistry)
 
-	txConfig := authtx.NewTxConfig(codec.NewProtoCodec(interfaceRegistry), addressCodec, validatorCodec, authtx.DefaultSignModes)
+	txConfig := authtx.NewTxConfig(codec.NewProtoCodec(interfaceRegistry), authtx.DefaultSignModes)
 	bApp := baseapp.NewBaseApp(appName, logger, db, txConfig.TxDecoder(), append(baseAppOptions, baseapp.SetChainID(appName))...)
 	bApp.MountKVStores(keys)
 
-	bApp.SetInitChainer(func(_ sdk.Context, _ *cmtabcitypes.InitChainRequest) (*cmtabcitypes.InitChainResponse, error) {
+	bApp.SetInitChainer(func(_ sdk.Context, _ *cmtabcitypes.RequestInitChain) (*cmtabcitypes.ResponseInitChain, error) {
 		for _, mod := range modules {
 			if m, ok := mod.(module.HasGenesis); ok {
-				if err := m.InitGenesis(sdkCtx, m.DefaultGenesis()); err != nil {
-					return nil, err
-				}
+				m.InitGenesis(sdkCtx, appCodec, m.DefaultGenesis(appCodec))
 			}
 		}
 
-		return &cmtabcitypes.InitChainResponse{}, nil
+		return &cmtabcitypes.ResponseInitChain{}, nil
 	})
 
 	bApp.SetBeginBlocker(func(_ sdk.Context) (sdk.BeginBlock, error) {
@@ -86,26 +77,20 @@ func NewIntegrationApp(
 		return moduleManager.EndBlock(sdkCtx)
 	})
 
-	msgRouter.SetInterfaceRegistry(interfaceRegistry)
-	bApp.SetMsgServiceRouter(msgRouter)
-	grpcRouter.SetInterfaceRegistry(interfaceRegistry)
-	bApp.SetGRPCQueryRouter(grpcRouter)
+	router := baseapp.NewMsgServiceRouter()
+	router.SetInterfaceRegistry(interfaceRegistry)
+	bApp.SetMsgServiceRouter(router)
 
-	if keys[consensus] != nil {
-		cps := newParamStore(runtime.NewKVStoreService(keys[consensus]), appCodec)
-		bApp.SetParamStore(cps)
-
-		params := cmttypes.ConsensusParamsFromProto(*simtestutil.DefaultConsensusParams) // This fills up missing param sections
-		err := cps.Set(sdkCtx, params.ToProto())
-		if err != nil {
-			panic(fmt.Errorf("failed to set consensus params: %w", err))
-		}
+	if keys[consensusparamtypes.StoreKey] != nil {
+		// set baseApp param store
+		consensusParamsKeeper := consensusparamkeeper.NewKeeper(appCodec, runtime.NewKVStoreService(keys[consensusparamtypes.StoreKey]), authtypes.NewModuleAddress("gov").String(), runtime.EventService{})
+		bApp.SetParamStore(consensusParamsKeeper.ParamsStore)
 
 		if err := bApp.LoadLatestVersion(); err != nil {
 			panic(fmt.Errorf("failed to load application version from store: %w", err))
 		}
 
-		if _, err := bApp.InitChain(&cmtabcitypes.InitChainRequest{ChainId: appName, ConsensusParams: simtestutil.DefaultConsensusParams}); err != nil {
+		if _, err := bApp.InitChain(&cmtabcitypes.RequestInitChain{ChainId: appName, ConsensusParams: simtestutil.DefaultConsensusParams}); err != nil {
 			panic(fmt.Errorf("failed to initialize application: %w", err))
 		}
 	} else {
@@ -113,15 +98,12 @@ func NewIntegrationApp(
 			panic(fmt.Errorf("failed to load application version from store: %w", err))
 		}
 
-		if _, err := bApp.InitChain(&cmtabcitypes.InitChainRequest{ChainId: appName}); err != nil {
+		if _, err := bApp.InitChain(&cmtabcitypes.RequestInitChain{ChainId: appName}); err != nil {
 			panic(fmt.Errorf("failed to initialize application: %w", err))
 		}
 	}
 
-	_, err := bApp.Commit()
-	if err != nil {
-		panic(err)
-	}
+	bApp.Commit()
 
 	ctx := sdkCtx.WithBlockHeader(cmtproto.Header{ChainID: appName}).WithIsCheckTx(true)
 
@@ -148,17 +130,12 @@ func (app *App) RunMsg(msg sdk.Msg, option ...Option) (*codectypes.Any, error) {
 	}
 
 	if cfg.AutomaticCommit {
-		defer func() {
-			_, err := app.Commit()
-			if err != nil {
-				panic(err)
-			}
-		}()
+		defer app.Commit()
 	}
 
 	if cfg.AutomaticFinalizeBlock {
 		height := app.LastBlockHeight() + 1
-		if _, err := app.FinalizeBlock(&cmtabcitypes.FinalizeBlockRequest{Height: height, DecidedLastCommit: cmtabcitypes.CommitInfo{Votes: []cmtabcitypes.VoteInfo{{}}}}); err != nil {
+		if _, err := app.FinalizeBlock(&cmtabcitypes.RequestFinalizeBlock{Height: height}); err != nil {
 			return nil, fmt.Errorf("failed to run finalize block: %w", err)
 		}
 	}
@@ -202,7 +179,7 @@ func (app *App) QueryHelper() *baseapp.QueryServiceTestHelper {
 
 // CreateMultiStore is a helper for setting up multiple stores for provided modules.
 func CreateMultiStore(keys map[string]*storetypes.KVStoreKey, logger log.Logger) storetypes.CommitMultiStore {
-	db := coretesting.NewMemDB()
+	db := dbm.NewMemDB()
 	cms := store.NewCommitMultiStore(db, logger, metrics.NewNoOpMetrics())
 
 	for key := range keys {
@@ -211,27 +188,4 @@ func CreateMultiStore(keys map[string]*storetypes.KVStoreKey, logger log.Logger)
 
 	_ = cms.LoadLatestVersion()
 	return cms
-}
-
-type paramStoreService struct {
-	ParamsStore collections.Item[cmtproto.ConsensusParams]
-}
-
-func newParamStore(storeService corestore.KVStoreService, cdc codec.Codec) paramStoreService {
-	sb := collections.NewSchemaBuilder(storeService)
-	return paramStoreService{
-		ParamsStore: collections.NewItem(sb, collections.NewPrefix("Consensus"), "params", codec.CollValue[cmtproto.ConsensusParams](cdc)),
-	}
-}
-
-func (pss paramStoreService) Get(ctx context.Context) (cmtproto.ConsensusParams, error) {
-	return pss.ParamsStore.Get(ctx)
-}
-
-func (pss paramStoreService) Has(ctx context.Context) (bool, error) {
-	return pss.ParamsStore.Has(ctx)
-}
-
-func (pss paramStoreService) Set(ctx context.Context, cp cmtproto.ConsensusParams) error {
-	return pss.ParamsStore.Set(ctx, cp)
 }

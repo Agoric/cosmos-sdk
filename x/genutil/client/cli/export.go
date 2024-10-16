@@ -1,4 +1,4 @@
-package cli
+package server
 
 import (
 	"bytes"
@@ -9,38 +9,37 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/cosmos/cosmos-sdk/client"
 	"github.com/cosmos/cosmos-sdk/client/flags"
-	"github.com/cosmos/cosmos-sdk/server"
-	servertypes "github.com/cosmos/cosmos-sdk/server/types"
+	"github.com/cosmos/cosmos-sdk/server/types"
 	"github.com/cosmos/cosmos-sdk/version"
 	genutiltypes "github.com/cosmos/cosmos-sdk/x/genutil/types"
 )
 
 const (
-	flagTraceStore       = "trace-store"
-	flagHeight           = "height"
-	flagForZeroHeight    = "for-zero-height"
-	flagJailAllowedAddrs = "jail-allowed-addrs"
-	flagModulesToExport  = "modules-to-export"
+	FlagHeight           = "height"
+	FlagForZeroHeight    = "for-zero-height"
+	FlagJailAllowedAddrs = "jail-allowed-addrs"
+	FlagModulesToExport  = "modules-to-export"
 )
 
 // ExportCmd dumps app state to JSON.
-func ExportCmd(appExporter servertypes.AppExporter) *cobra.Command {
+func ExportCmd(appExporter types.AppExporter, defaultNodeHome string) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "export",
 		Short: "Export state to JSON",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			config := client.GetConfigFromCmd(cmd)
-			viper := client.GetViperFromCmd(cmd)
-			logger := client.GetLoggerFromCmd(cmd)
+			serverCtx := GetServerContextFromCmd(cmd)
+			config := serverCtx.Config
+
+			homeDir, _ := cmd.Flags().GetString(flags.FlagHome)
+			config.SetRoot(homeDir)
 
 			if _, err := os.Stat(config.GenesisFile()); os.IsNotExist(err) {
 				return err
 			}
 
-			db, err := server.OpenDB(config.RootDir, server.GetAppDBBackend(viper))
+			db, err := openDB(config.RootDir, GetAppDBBackend(serverCtx.Viper))
 			if err != nil {
 				return err
 			}
@@ -68,24 +67,23 @@ func ExportCmd(appExporter servertypes.AppExporter) *cobra.Command {
 			}
 
 			traceWriterFile, _ := cmd.Flags().GetString(flagTraceStore)
-			traceWriter, cleanup, err := server.SetupTraceWriter(logger, traceWriterFile) //resleak:notresource
+			traceWriter, err := openTraceWriter(traceWriterFile)
 			if err != nil {
 				return err
 			}
-			defer cleanup()
 
-			height, _ := cmd.Flags().GetInt64(flagHeight)
-			forZeroHeight, _ := cmd.Flags().GetBool(flagForZeroHeight)
-			jailAllowedAddrs, _ := cmd.Flags().GetStringSlice(flagJailAllowedAddrs)
-			modulesToExport, _ := cmd.Flags().GetStringSlice(flagModulesToExport)
+			height, _ := cmd.Flags().GetInt64(FlagHeight)
+			forZeroHeight, _ := cmd.Flags().GetBool(FlagForZeroHeight)
+			jailAllowedAddrs, _ := cmd.Flags().GetStringSlice(FlagJailAllowedAddrs)
+			modulesToExport, _ := cmd.Flags().GetStringSlice(FlagModulesToExport)
 			outputDocument, _ := cmd.Flags().GetString(flags.FlagOutputDocument)
 
-			exported, err := appExporter(logger, db, traceWriter, height, forZeroHeight, jailAllowedAddrs, viper, modulesToExport)
+			exported, err := appExporter(serverCtx.Logger, db, traceWriter, height, forZeroHeight, jailAllowedAddrs, serverCtx.Viper, modulesToExport)
 			if err != nil {
 				return fmt.Errorf("error exporting state: %w", err)
 			}
 
-			appGenesis, err := genutiltypes.AppGenesisFromFile(config.GenesisFile())
+			appGenesis, err := genutiltypes.AppGenesisFromFile(serverCtx.Config.GenesisFile())
 			if err != nil {
 				return err
 			}
@@ -117,10 +115,11 @@ func ExportCmd(appExporter servertypes.AppExporter) *cobra.Command {
 		},
 	}
 
-	cmd.Flags().Int64(flagHeight, -1, "Export state from a particular height (-1 means latest height)")
-	cmd.Flags().Bool(flagForZeroHeight, false, "Export state to start at height zero (perform preproccessing)")
-	cmd.Flags().StringSlice(flagJailAllowedAddrs, []string{}, "Comma-separated list of operator addresses of jailed validators to unjail")
-	cmd.Flags().StringSlice(flagModulesToExport, []string{}, "Comma-separated list of modules to export. If empty, will export all modules")
+	cmd.Flags().String(flags.FlagHome, defaultNodeHome, "The application home directory")
+	cmd.Flags().Int64(FlagHeight, -1, "Export state from a particular height (-1 means latest height)")
+	cmd.Flags().Bool(FlagForZeroHeight, false, "Export state to start at height zero (perform preproccessing)")
+	cmd.Flags().StringSlice(FlagJailAllowedAddrs, []string{}, "Comma-separated list of operator addresses of jailed validators to unjail")
+	cmd.Flags().StringSlice(FlagModulesToExport, []string{}, "Comma-separated list of modules to export. If empty, will export all modules")
 	cmd.Flags().String(flags.FlagOutputDocument, "", "Exported state is written to the given file instead of STDOUT")
 
 	return cmd

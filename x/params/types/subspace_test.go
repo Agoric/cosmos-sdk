@@ -6,20 +6,20 @@ import (
 	"testing"
 	"time"
 
+	cmtproto "github.com/cometbft/cometbft/proto/tendermint/types"
+	dbm "github.com/cosmos/cosmos-db"
 	"github.com/stretchr/testify/suite"
 
-	coretesting "cosmossdk.io/core/testing"
 	"cosmossdk.io/log"
 	"cosmossdk.io/store"
 	"cosmossdk.io/store/metrics"
 	storetypes "cosmossdk.io/store/types"
-	paramsmodule "cosmossdk.io/x/params"
-	"cosmossdk.io/x/params/types"
 
 	"github.com/cosmos/cosmos-sdk/codec"
-	codectestutil "github.com/cosmos/cosmos-sdk/codec/testutil"
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	moduletestutil "github.com/cosmos/cosmos-sdk/types/module/testutil"
+	paramsmodule "github.com/cosmos/cosmos-sdk/x/params"
+	"github.com/cosmos/cosmos-sdk/x/params/types"
 )
 
 type SubspaceTestSuite struct {
@@ -32,19 +32,19 @@ type SubspaceTestSuite struct {
 }
 
 func (suite *SubspaceTestSuite) SetupTest() {
-	db := coretesting.NewMemDB()
+	db := dbm.NewMemDB()
 
 	ms := store.NewCommitMultiStore(db, log.NewNopLogger(), metrics.NewNoOpMetrics())
 	ms.MountStoreWithDB(key, storetypes.StoreTypeIAVL, db)
 	ms.MountStoreWithDB(tkey, storetypes.StoreTypeTransient, db)
 	suite.NoError(ms.LoadLatestVersion())
 
-	encodingConfig := moduletestutil.MakeTestEncodingConfig(codectestutil.CodecOptions{}, paramsmodule.AppModule{})
+	encodingConfig := moduletestutil.MakeTestEncodingConfig(paramsmodule.AppModuleBasic{})
 	suite.cdc = encodingConfig.Codec
 	suite.amino = encodingConfig.Amino
 
 	ss := types.NewSubspace(suite.cdc, suite.amino, key, tkey, "testsubspace")
-	suite.ctx = sdk.NewContext(ms, false, log.NewNopLogger())
+	suite.ctx = sdk.NewContext(ms, cmtproto.Header{}, false, log.NewNopLogger())
 	suite.ss = ss.WithKeyTable(paramKeyTable())
 }
 
@@ -154,8 +154,7 @@ func (suite *SubspaceTestSuite) TestModified() {
 
 func (suite *SubspaceTestSuite) TestUpdate() {
 	suite.Require().Panics(func() {
-		err := suite.ss.Update(suite.ctx, []byte("invalid_key"), nil)
-		suite.Require().NoError(err)
+		suite.ss.Update(suite.ctx, []byte("invalid_key"), nil)
 	})
 
 	t := time.Hour * 48
@@ -236,6 +235,7 @@ func (suite *SubspaceTestSuite) TestSetParamSet() {
 	}
 
 	for _, tc := range testCases {
+		tc := tc
 		suite.Run(tc.name, func() {
 			suite.Require().Panics(func() {
 				suite.ss.SetParamSet(suite.ctx, tc.ps)

@@ -6,13 +6,13 @@ import (
 
 	"gotest.tools/v3/assert"
 
-	"cosmossdk.io/collections"
 	"cosmossdk.io/math"
-	"cosmossdk.io/x/distribution/types"
-	stakingtypes "cosmossdk.io/x/staking/types"
 
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	"github.com/cosmos/cosmos-sdk/types/query"
+	"github.com/cosmos/cosmos-sdk/x/distribution/types"
+	stakingtestutil "github.com/cosmos/cosmos-sdk/x/staking/testutil"
+	stakingtypes "github.com/cosmos/cosmos-sdk/x/staking/types"
 )
 
 func TestGRPCParams(t *testing.T) {
@@ -20,6 +20,9 @@ func TestGRPCParams(t *testing.T) {
 	f := initFixture(t)
 
 	assert.NilError(t, f.distrKeeper.Params.Set(f.sdkCtx, types.DefaultParams()))
+
+	qr := f.app.QueryHelper()
+	queryClient := types.NewQueryClient(qr)
 
 	var (
 		params    types.Params
@@ -60,7 +63,7 @@ func TestGRPCParams(t *testing.T) {
 		t.Run(fmt.Sprintf("Case %s", tc.name), func(t *testing.T) {
 			tc.malleate()
 
-			paramsRes, err := f.queryClient.Params(f.sdkCtx, tc.msg)
+			paramsRes, err := queryClient.Params(f.sdkCtx, tc.msg)
 			assert.NilError(t, err)
 			assert.Assert(t, paramsRes != nil)
 			assert.DeepEqual(t, paramsRes.Params, expParams)
@@ -73,19 +76,35 @@ func TestGRPCValidatorOutstandingRewards(t *testing.T) {
 	t.Parallel()
 	f := initFixture(t)
 
-	assert.NilError(t, f.distrKeeper.Params.Set(f.sdkCtx, types.DefaultParams()))
-	setupValidatorWithCommission(t, f, f.valAddr, 10) // Setup a validator with commission
+	// set module account coins
+	initTokens := f.stakingKeeper.TokensFromConsensusPower(f.sdkCtx, int64(1000))
+	assert.NilError(t, f.bankKeeper.MintCoins(f.sdkCtx, types.ModuleName, sdk.NewCoins(sdk.NewCoin(sdk.DefaultBondDenom, initTokens))))
+
+	// Set default staking params
+	assert.NilError(t, f.stakingKeeper.SetParams(f.sdkCtx, stakingtypes.DefaultParams()))
+
+	qr := f.app.QueryHelper()
+	queryClient := types.NewQueryClient(qr)
 
 	valCommission := sdk.DecCoins{
 		sdk.NewDecCoinFromDec("mytoken", math.LegacyNewDec(5000)),
 		sdk.NewDecCoinFromDec("stake", math.LegacyNewDec(300)),
 	}
 
+	// send funds to val addr
+	funds := f.stakingKeeper.TokensFromConsensusPower(f.sdkCtx, int64(1000))
+	assert.NilError(t, f.bankKeeper.SendCoinsFromModuleToAccount(f.sdkCtx, types.ModuleName, sdk.AccAddress(f.valAddr), sdk.NewCoins(sdk.NewCoin(sdk.DefaultBondDenom, funds))))
+
+	initialStake := int64(10)
+	tstaking := stakingtestutil.NewHelper(t, f.sdkCtx, f.stakingKeeper)
+	tstaking.Commission = stakingtypes.NewCommissionRates(math.LegacyNewDecWithPrec(5, 1), math.LegacyNewDecWithPrec(5, 1), math.LegacyNewDec(0))
+	tstaking.CreateValidator(f.valAddr, valConsPk0, math.NewInt(initialStake), true)
+
 	// set outstanding rewards
-	err := f.distrKeeper.ValidatorOutstandingRewards.Set(f.sdkCtx, f.valAddr, types.ValidatorOutstandingRewards{Rewards: valCommission})
+	err := f.distrKeeper.SetValidatorOutstandingRewards(f.sdkCtx, f.valAddr, types.ValidatorOutstandingRewards{Rewards: valCommission})
 	assert.NilError(t, err)
 
-	rewards, err := f.distrKeeper.ValidatorOutstandingRewards.Get(f.sdkCtx, f.valAddr)
+	rewards, err := f.distrKeeper.GetValidatorOutstandingRewards(f.sdkCtx, f.valAddr)
 	assert.NilError(t, err)
 
 	testCases := []struct {
@@ -116,7 +135,7 @@ func TestGRPCValidatorOutstandingRewards(t *testing.T) {
 	for _, testCase := range testCases {
 		tc := testCase
 		t.Run(fmt.Sprintf("Case %s", tc.name), func(t *testing.T) {
-			validatorOutstandingRewards, err := f.queryClient.ValidatorOutstandingRewards(f.sdkCtx, tc.msg)
+			validatorOutstandingRewards, err := queryClient.ValidatorOutstandingRewards(f.sdkCtx, tc.msg)
 
 			if tc.expPass {
 				assert.NilError(t, err)
@@ -134,11 +153,27 @@ func TestGRPCValidatorCommission(t *testing.T) {
 	t.Parallel()
 	f := initFixture(t)
 
-	assert.NilError(t, f.distrKeeper.Params.Set(f.sdkCtx, types.DefaultParams())) // Set default distribution parameters
-	setupValidatorWithCommission(t, f, f.valAddr, 10)                             // Setup a validator with commission
+	// set module account coins
+	initTokens := f.stakingKeeper.TokensFromConsensusPower(f.sdkCtx, int64(1000))
+	assert.NilError(t, f.bankKeeper.MintCoins(f.sdkCtx, types.ModuleName, sdk.NewCoins(sdk.NewCoin(sdk.DefaultBondDenom, initTokens))))
+
+	// Set default staking params
+	assert.NilError(t, f.stakingKeeper.SetParams(f.sdkCtx, stakingtypes.DefaultParams()))
+
+	qr := f.app.QueryHelper()
+	queryClient := types.NewQueryClient(qr)
+
+	// send funds to val addr
+	funds := f.stakingKeeper.TokensFromConsensusPower(f.sdkCtx, int64(1000))
+	assert.NilError(t, f.bankKeeper.SendCoinsFromModuleToAccount(f.sdkCtx, types.ModuleName, sdk.AccAddress(f.valAddr), sdk.NewCoins(sdk.NewCoin(sdk.DefaultBondDenom, funds))))
+
+	initialStake := int64(10)
+	tstaking := stakingtestutil.NewHelper(t, f.sdkCtx, f.stakingKeeper)
+	tstaking.Commission = stakingtypes.NewCommissionRates(math.LegacyNewDecWithPrec(5, 1), math.LegacyNewDecWithPrec(5, 1), math.LegacyNewDec(0))
+	tstaking.CreateValidator(f.valAddr, valConsPk0, math.NewInt(initialStake), true)
 
 	commission := sdk.DecCoins{sdk.DecCoin{Denom: "token1", Amount: math.LegacyNewDec(4)}, {Denom: "token2", Amount: math.LegacyNewDec(2)}}
-	assert.NilError(t, f.distrKeeper.ValidatorsAccumulatedCommission.Set(f.sdkCtx, f.valAddr, types.ValidatorAccumulatedCommission{Commission: commission}))
+	assert.NilError(t, f.distrKeeper.SetValidatorAccumulatedCommission(f.sdkCtx, f.valAddr, types.ValidatorAccumulatedCommission{Commission: commission}))
 
 	testCases := []struct {
 		name      string
@@ -168,7 +203,7 @@ func TestGRPCValidatorCommission(t *testing.T) {
 	for _, testCase := range testCases {
 		tc := testCase
 		t.Run(fmt.Sprintf("Case %s", tc.name), func(t *testing.T) {
-			commissionRes, err := f.queryClient.ValidatorCommission(f.sdkCtx, tc.msg)
+			commissionRes, err := queryClient.ValidatorCommission(f.sdkCtx, tc.msg)
 
 			if tc.expPass {
 				assert.NilError(t, err)
@@ -186,6 +221,9 @@ func TestGRPCValidatorSlashes(t *testing.T) {
 	t.Parallel()
 	f := initFixture(t)
 
+	qr := f.app.QueryHelper()
+	queryClient := types.NewQueryClient(qr)
+
 	addr2 := sdk.AccAddress(PKS[1].Address())
 	valAddr2 := sdk.ValAddress(addr2)
 
@@ -197,12 +235,7 @@ func TestGRPCValidatorSlashes(t *testing.T) {
 	}
 
 	for i, slash := range slashes {
-		err := f.distrKeeper.ValidatorSlashEvents.Set(
-			f.sdkCtx,
-			collections.Join3(f.valAddr, uint64(i+2), uint64(0)),
-			slash,
-		)
-		assert.NilError(t, err)
+		assert.NilError(t, f.distrKeeper.SetValidatorSlashEvent(f.sdkCtx, f.valAddr, uint64(i+2), 0, slash))
 	}
 
 	var (
@@ -320,7 +353,7 @@ func TestGRPCValidatorSlashes(t *testing.T) {
 		t.Run(fmt.Sprintf("Case %s", tc.name), func(t *testing.T) {
 			tc.malleate()
 
-			slashesRes, err := f.queryClient.ValidatorSlashes(f.sdkCtx, req)
+			slashesRes, err := queryClient.ValidatorSlashes(f.sdkCtx, req)
 
 			if tc.expPass {
 				assert.NilError(t, err)
@@ -338,6 +371,9 @@ func TestGRPCDelegatorWithdrawAddress(t *testing.T) {
 	f := initFixture(t)
 
 	assert.NilError(t, f.distrKeeper.Params.Set(f.sdkCtx, types.DefaultParams()))
+
+	qr := f.app.QueryHelper()
+	queryClient := types.NewQueryClient(qr)
 
 	addr2 := sdk.AccAddress(PKS[1].Address())
 
@@ -366,7 +402,7 @@ func TestGRPCDelegatorWithdrawAddress(t *testing.T) {
 	for _, testCase := range testCases {
 		tc := testCase
 		t.Run(fmt.Sprintf("Case %s", tc.name), func(t *testing.T) {
-			withdrawAddress, err := f.queryClient.DelegatorWithdrawAddress(f.sdkCtx, tc.msg)
+			withdrawAddress, err := queryClient.DelegatorWithdrawAddress(f.sdkCtx, tc.msg)
 
 			if tc.expPass {
 				assert.NilError(t, err)
@@ -383,9 +419,16 @@ func TestGRPCCommunityPool(t *testing.T) {
 	t.Parallel()
 	f := initFixture(t)
 
+	assert.NilError(t, f.distrKeeper.FeePool.Set(f.sdkCtx, types.FeePool{
+		CommunityPool: sdk.NewDecCoins(sdk.DecCoin{Denom: sdk.DefaultBondDenom, Amount: math.LegacyNewDec(0)}),
+	}))
+
+	qr := f.app.QueryHelper()
+	queryClient := types.NewQueryClient(qr)
+
 	var (
-		req     *types.QueryCommunityPoolRequest  //nolint:staticcheck // we're using a deprecated call
-		expPool *types.QueryCommunityPoolResponse //nolint:staticcheck // we're using a deprecated call
+		req     *types.QueryCommunityPoolRequest
+		expPool *types.QueryCommunityPoolResponse
 	)
 
 	testCases := []struct {
@@ -395,8 +438,8 @@ func TestGRPCCommunityPool(t *testing.T) {
 		{
 			name: "valid request empty community pool",
 			malleate: func() {
-				req = &types.QueryCommunityPoolRequest{}      //nolint:staticcheck // we're using a deprecated call
-				expPool = &types.QueryCommunityPoolResponse{} //nolint:staticcheck // we're using a deprecated call
+				req = &types.QueryCommunityPoolRequest{}
+				expPool = &types.QueryCommunityPoolResponse{}
 			},
 		},
 		{
@@ -406,11 +449,11 @@ func TestGRPCCommunityPool(t *testing.T) {
 				assert.NilError(t, f.bankKeeper.MintCoins(f.sdkCtx, types.ModuleName, amount))
 				assert.NilError(t, f.bankKeeper.SendCoinsFromModuleToAccount(f.sdkCtx, types.ModuleName, f.addr, amount))
 
-				err := f.poolKeeper.FundCommunityPool(f.sdkCtx, amount, f.addr)
+				err := f.distrKeeper.FundCommunityPool(f.sdkCtx, amount, f.addr)
 				assert.Assert(t, err == nil)
-				req = &types.QueryCommunityPoolRequest{} //nolint:staticcheck // we're using a deprecated call
+				req = &types.QueryCommunityPoolRequest{}
 
-				expPool = &types.QueryCommunityPoolResponse{Pool: sdk.NewDecCoinsFromCoins(amount...)} //nolint:staticcheck // we're using a deprecated call
+				expPool = &types.QueryCommunityPoolResponse{Pool: sdk.NewDecCoinsFromCoins(amount...)}
 			},
 		},
 	}
@@ -420,7 +463,7 @@ func TestGRPCCommunityPool(t *testing.T) {
 		t.Run(fmt.Sprintf("Case %s", tc.name), func(t *testing.T) {
 			testCase.malleate()
 
-			pool, err := f.queryClient.CommunityPool(f.sdkCtx, req) //nolint:staticcheck // we're using a deprecated call
+			pool, err := queryClient.CommunityPool(f.sdkCtx, req)
 
 			assert.NilError(t, err)
 			assert.DeepEqual(t, expPool, pool)
@@ -436,18 +479,31 @@ func TestGRPCDelegationRewards(t *testing.T) {
 		CommunityPool: sdk.NewDecCoins(sdk.DecCoin{Denom: sdk.DefaultBondDenom, Amount: math.LegacyNewDec(1000)}),
 	}))
 
-	initialStake := int64(10)
-	assert.NilError(t, f.distrKeeper.Params.Set(f.sdkCtx, types.DefaultParams()))
-	setupValidatorWithCommission(t, f, f.valAddr, initialStake) // Setup a validator with commission
-	val, found := f.stakingKeeper.GetValidator(f.sdkCtx, f.valAddr)
-	assert.Assert(t, found)
+	// set module account coins
+	initTokens := f.stakingKeeper.TokensFromConsensusPower(f.sdkCtx, int64(1000))
+	assert.NilError(t, f.bankKeeper.MintCoins(f.sdkCtx, types.ModuleName, sdk.NewCoins(sdk.NewCoin(sdk.DefaultBondDenom, initTokens))))
 
 	// Set default staking params
-	assert.NilError(t, f.stakingKeeper.Params.Set(f.sdkCtx, stakingtypes.DefaultParams()))
+	assert.NilError(t, f.stakingKeeper.SetParams(f.sdkCtx, stakingtypes.DefaultParams()))
+
+	qr := f.app.QueryHelper()
+	queryClient := types.NewQueryClient(qr)
 
 	addr2 := sdk.AccAddress(PKS[1].Address())
 	valAddr2 := sdk.ValAddress(addr2)
 	delAddr := sdk.AccAddress(PKS[2].Address())
+
+	// send funds to val addr
+	funds := f.stakingKeeper.TokensFromConsensusPower(f.sdkCtx, int64(1000))
+	assert.NilError(t, f.bankKeeper.SendCoinsFromModuleToAccount(f.sdkCtx, types.ModuleName, sdk.AccAddress(f.valAddr), sdk.NewCoins(sdk.NewCoin(sdk.DefaultBondDenom, funds))))
+
+	initialStake := int64(10)
+	tstaking := stakingtestutil.NewHelper(t, f.sdkCtx, f.stakingKeeper)
+	tstaking.Commission = stakingtypes.NewCommissionRates(math.LegacyNewDecWithPrec(5, 1), math.LegacyNewDecWithPrec(5, 1), math.LegacyNewDec(0))
+	tstaking.CreateValidator(f.valAddr, valConsPk0, math.NewInt(initialStake), true)
+
+	val, found := f.stakingKeeper.GetValidator(f.sdkCtx, f.valAddr)
+	assert.Assert(t, found)
 
 	// setup delegation
 	delTokens := sdk.TokensFromConsensusPower(2, sdk.DefaultPowerReduction)
@@ -456,16 +512,16 @@ func TestGRPCDelegationRewards(t *testing.T) {
 	assert.NilError(t, f.stakingKeeper.SetDelegation(f.sdkCtx, delegation))
 	valBz, err := f.stakingKeeper.ValidatorAddressCodec().StringToBytes(validator.GetOperator())
 	assert.NilError(t, err)
-	assert.NilError(t, f.distrKeeper.DelegatorStartingInfo.Set(f.sdkCtx, collections.Join(sdk.ValAddress(valBz), delAddr), types.NewDelegatorStartingInfo(2, math.LegacyNewDec(initialStake), 20)))
+	assert.NilError(t, f.distrKeeper.SetDelegatorStartingInfo(f.sdkCtx, valBz, delAddr, types.NewDelegatorStartingInfo(2, math.LegacyNewDec(initialStake), 20)))
 
 	// setup validator rewards
 	decCoins := sdk.DecCoins{sdk.NewDecCoinFromDec(sdk.DefaultBondDenom, math.LegacyOneDec())}
 	historicalRewards := types.NewValidatorHistoricalRewards(decCoins, 2)
-	assert.NilError(t, f.distrKeeper.ValidatorHistoricalRewards.Set(f.sdkCtx, collections.Join(sdk.ValAddress(valBz), uint64(2)), historicalRewards))
+	assert.NilError(t, f.distrKeeper.SetValidatorHistoricalRewards(f.sdkCtx, valBz, 2, historicalRewards))
 	// setup current rewards and outstanding rewards
 	currentRewards := types.NewValidatorCurrentRewards(decCoins, 3)
-	assert.NilError(t, f.distrKeeper.ValidatorCurrentRewards.Set(f.sdkCtx, f.valAddr, currentRewards))
-	assert.NilError(t, f.distrKeeper.ValidatorOutstandingRewards.Set(f.sdkCtx, f.valAddr, types.ValidatorOutstandingRewards{Rewards: decCoins}))
+	assert.NilError(t, f.distrKeeper.SetValidatorCurrentRewards(f.sdkCtx, f.valAddr, currentRewards))
+	assert.NilError(t, f.distrKeeper.SetValidatorOutstandingRewards(f.sdkCtx, f.valAddr, types.ValidatorOutstandingRewards{Rewards: decCoins}))
 
 	expRes := &types.QueryDelegationRewardsResponse{
 		Rewards: sdk.DecCoins{sdk.DecCoin{Denom: sdk.DefaultBondDenom, Amount: math.LegacyNewDec(initialStake / 10)}},
@@ -524,7 +580,7 @@ func TestGRPCDelegationRewards(t *testing.T) {
 	for _, testCase := range testCases {
 		tc := testCase
 		t.Run(fmt.Sprintf("Case %s", tc.name), func(t *testing.T) {
-			rewards, err := f.queryClient.DelegationRewards(f.sdkCtx, tc.msg)
+			rewards, err := queryClient.DelegationRewards(f.sdkCtx, tc.msg)
 
 			if tc.expPass {
 				assert.NilError(t, err)

@@ -1,16 +1,16 @@
-package baseapp
+package errors
 
 import (
-	abci "github.com/cometbft/cometbft/api/cometbft/abci/v1"
+	abci "github.com/cometbft/cometbft/abci/types"
 
 	errorsmod "cosmossdk.io/errors"
 )
 
-// responseCheckTxWithEvents returns an ABCI ResponseCheckTx object with fields filled in
+// ResponseCheckTxWithEvents returns an ABCI ResponseCheckTx object with fields filled in
 // from the given error, gas values and events.
-func responseCheckTxWithEvents(err error, gw, gu uint64, events []abci.Event, debug bool) *abci.CheckTxResponse {
+func ResponseCheckTxWithEvents(err error, gw, gu uint64, events []abci.Event, debug bool) *abci.ResponseCheckTx {
 	space, code, log := errorsmod.ABCIInfo(err, debug)
-	return &abci.CheckTxResponse{
+	return &abci.ResponseCheckTx{
 		Codespace: space,
 		Code:      code,
 		Log:       log,
@@ -20,9 +20,9 @@ func responseCheckTxWithEvents(err error, gw, gu uint64, events []abci.Event, de
 	}
 }
 
-// responseExecTxResultWithEvents returns an ABCI ExecTxResult object with fields
+// ResponseExecTxResultWithEvents returns an ABCI ExecTxResult object with fields
 // filled in from the given error, gas values and events.
-func responseExecTxResultWithEvents(err error, gw, gu uint64, events []abci.Event, debug bool) *abci.ExecTxResult {
+func ResponseExecTxResultWithEvents(err error, gw, gu uint64, events []abci.Event, debug bool) *abci.ExecTxResult {
 	space, code, log := errorsmod.ABCIInfo(err, debug)
 	return &abci.ExecTxResult{
 		Codespace: space,
@@ -34,11 +34,11 @@ func responseExecTxResultWithEvents(err error, gw, gu uint64, events []abci.Even
 	}
 }
 
-// queryResult returns a ResponseQuery from an error. It will try to parse ABCI
+// QueryResult returns a ResponseQuery from an error. It will try to parse ABCI
 // info from the error.
-func queryResult(err error, debug bool) *abci.QueryResponse {
+func QueryResult(err error, debug bool) *abci.ResponseQuery {
 	space, code, log := errorsmod.ABCIInfo(err, debug)
-	return &abci.QueryResponse{
+	return &abci.ResponseQuery{
 		Codespace: space,
 		Code:      code,
 		Log:       log,

@@ -4,10 +4,10 @@ import (
 	"context"
 	"testing"
 
-	abci "github.com/cometbft/cometbft/api/cometbft/abci/v1"
+	abci "github.com/cometbft/cometbft/abci/types"
+	dbm "github.com/cosmos/cosmos-db"
 	"github.com/stretchr/testify/require"
 
-	coretesting "cosmossdk.io/core/testing"
 	"cosmossdk.io/depinject"
 	"cosmossdk.io/log"
 
@@ -33,7 +33,7 @@ func TestRegisterMsgService(t *testing.T) {
 			depinject.Supply(log.NewTestLogger(t)),
 		), &appBuilder, &registry)
 	require.NoError(t, err)
-	app := appBuilder.Build(coretesting.NewMemDB(), nil)
+	app := appBuilder.Build(dbm.NewMemDB(), nil)
 
 	require.Panics(t, func() {
 		testdata.RegisterMsgServer(
@@ -65,7 +65,7 @@ func TestRegisterMsgServiceTwice(t *testing.T) {
 			depinject.Supply(log.NewTestLogger(t)),
 		), &appBuilder, &registry)
 	require.NoError(t, err)
-	db := coretesting.NewMemDB()
+	db := dbm.NewMemDB()
 	app := appBuilder.Build(db, nil)
 	testdata.RegisterInterfaces(registry)
 
@@ -98,7 +98,7 @@ func TestHybridHandlerByMsgName(t *testing.T) {
 			depinject.Supply(log.NewTestLogger(t)),
 		), &appBuilder, &registry)
 	require.NoError(t, err)
-	db := coretesting.NewMemDB()
+	db := dbm.NewMemDB()
 	app := appBuilder.Build(db, nil)
 	testdata.RegisterInterfaces(registry)
 
@@ -135,11 +135,10 @@ func TestMsgService(t *testing.T) {
 			depinject.Supply(log.NewNopLogger()),
 		), &appBuilder, &cdc, &interfaceRegistry)
 	require.NoError(t, err)
-	app := appBuilder.Build(coretesting.NewMemDB(), nil)
-	signingCtx := interfaceRegistry.SigningContext()
+	app := appBuilder.Build(dbm.NewMemDB(), nil)
 
 	// patch in TxConfig instead of using an output from x/auth/tx
-	txConfig := authtx.NewTxConfig(cdc, signingCtx.AddressCodec(), signingCtx.ValidatorAddressCodec(), authtx.DefaultSignModes)
+	txConfig := authtx.NewTxConfig(cdc, authtx.DefaultSignModes)
 	// set the TxDecoder in the BaseApp for minimal tx simulations
 	app.SetTxDecoder(txConfig.TxDecoder())
 
@@ -151,15 +150,13 @@ func TestMsgService(t *testing.T) {
 		app.MsgServiceRouter(),
 		testdata.MsgServerImpl{},
 	)
-	_, err = app.FinalizeBlock(&abci.FinalizeBlockRequest{Height: 1})
+	_, err = app.FinalizeBlock(&abci.RequestFinalizeBlock{Height: 1})
 	require.NoError(t, err)
 
 	_, _, addr := testdata.KeyTestPubAddr()
-	addrStr, err := signingCtx.AddressCodec().BytesToString(addr)
-	require.NoError(t, err)
 	msg := testdata.MsgCreateDog{
 		Dog:   &testdata.Dog{Name: "Spot"},
-		Owner: addrStr,
+		Owner: addr.String(),
 	}
 
 	txBuilder := txConfig.NewTxBuilder()
@@ -199,7 +196,7 @@ func TestMsgService(t *testing.T) {
 	// Send the tx to the app
 	txBytes, err := txConfig.TxEncoder()(txBuilder.GetTx())
 	require.NoError(t, err)
-	res, err := app.FinalizeBlock(&abci.FinalizeBlockRequest{Height: 1, Txs: [][]byte{txBytes}})
+	res, err := app.FinalizeBlock(&abci.RequestFinalizeBlock{Height: 1, Txs: [][]byte{txBytes}})
 	require.NoError(t, err)
 	require.Equal(t, abci.CodeTypeOK, res.TxResults[0].Code, "res=%+v", res)
 }

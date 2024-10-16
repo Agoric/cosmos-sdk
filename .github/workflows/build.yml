@@ -1,4 +1,5 @@
 name: Build SimApp
+#  This workflow is run on pushes to main & every Pull Requests where a .go, .mod, .sum have been changed
 on:
   pull_request:
   merge_group:
@@ -20,46 +21,40 @@ jobs:
       matrix:
         go-arch: ["amd64", "arm", "arm64"]
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - uses: actions/checkout@v3
+      - uses: actions/setup-go@v4
         with:
-          go-version: "1.23"
+          go-version: "1.21"
           check-latest: true
-      - name: Get rocksdb version
-        run: ./.github/scripts/get-rocksdb-version.sh
-      - name: Fix permissions for cache
-        run: sudo chown $(whoami) /usr/local/lib /usr/local/include
-      - name: Restore rocksdb libraries cache
-        id: cache-rocksdb
-        if: matrix.go-arch == 'amd64'
-        uses: actions/cache/restore@v4
+      - uses: technote-space/get-diff-action@v6.1.2
+        id: git_diff
         with:
-          path: |
-            /usr/local/lib/librocksdb.*
-            /usr/local/include/rocksdb
-          key: ${{ runner.os }}-rocksdb-${{ env.ROCKSDB_VERSION }}-${{ matrix.go-arch }}
-      - name: Install rocksdb deps
-        if: matrix.go-arch == 'amd64'
-        run: ./.github/scripts/install-rocksdb-deps.sh
-      - name: Install rocksdb
-        if: matrix.go-arch == 'amd64' && steps.cache-rocksdb.outputs.cache-hit != 'true'
-        run: ./.github/scripts/install-rocksdb.sh
+          PATTERNS: |
+            **/*.go
+            go.mod
+            go.sum
+            **/go.mod
+            **/go.sum
+            **/Makefile
+            Makefile
         ###################
         #### Build App ####
         ###################
       - name: Build
+        if: env.GIT_DIFF
         run: GOARCH=${{ matrix.go-arch }} make build
       - name: Build Legacy
+        if: env.GIT_DIFF
         run: GOARCH=${{ matrix.go-arch }} COSMOS_BUILD_OPTIONS=legacy make build
-      - name: Build with rocksdb backend
-        if: matrix.go-arch == 'amd64'
-        run: GOARCH=${{ matrix.go-arch }} COSMOS_BUILD_OPTIONS="rocksdb" make build
         ###################
         ## Build Tooling ##
         ###################
       - name: Build Cosmovisor
+        if: env.GIT_DIFF
         run: GOARCH=${{ matrix.go-arch }} make cosmovisor
       - name: Build Confix
+        if: env.GIT_DIFF
         run: GOARCH=${{ matrix.go-arch }} make confix
       - name: Build Hubl
+        if: env.GIT_DIFF
         run: GOARCH=${{ matrix.go-arch }} make hubl

@@ -7,7 +7,6 @@ import (
 	"github.com/stretchr/testify/require"
 
 	clienttx "github.com/cosmos/cosmos-sdk/client/tx"
-	codectestutil "github.com/cosmos/cosmos-sdk/codec/testutil"
 	codectypes "github.com/cosmos/cosmos-sdk/codec/types"
 	"github.com/cosmos/cosmos-sdk/testutil/testdata"
 	_ "github.com/cosmos/cosmos-sdk/testutil/testdata/testpb"
@@ -38,8 +37,7 @@ var (
 // Then it tests integrating the 2 AuxSignerData into a
 // client.TxBuilder created by the fee payer.
 func TestBuilderWithAux(t *testing.T) {
-	t.Skip("restore when we re-enable aux on the TX builder")
-	encodingConfig := moduletestutil.MakeTestEncodingConfig(codectestutil.CodecOptions{})
+	encodingConfig := moduletestutil.MakeTestEncodingConfig()
 	interfaceRegistry := encodingConfig.InterfaceRegistry
 	txConfig := encodingConfig.TxConfig
 
@@ -100,6 +98,7 @@ func TestBuilderWithAux(t *testing.T) {
 		{"happy case", func() {}, false},
 	}
 	for _, tc := range testcases {
+		tc := tc
 		t.Run(tc.name, func(t *testing.T) {
 			txBuilder, txSig = makeTxBuilder(t)
 
@@ -127,12 +126,10 @@ func TestBuilderWithAux(t *testing.T) {
 	txSigV2 := sigs[0]
 	aux2SigV2 := sigs[1]
 	// Set all signer infos.
-	err = w.SetSignatures(txSigV2, aux2SigV2, signing.SignatureV2{
+	w.SetSignatures(txSigV2, aux2SigV2, signing.SignatureV2{
 		PubKey:   feepayerPk,
 		Sequence: 15,
 	})
-	require.NoError(t, err)
-
 	signerData := authsigning.SignerData{
 		Address:       feepayerAddr.String(),
 		ChainID:       chainID,
@@ -149,7 +146,7 @@ func TestBuilderWithAux(t *testing.T) {
 	feepayerSig, err := feepayerPriv.Sign(signBz)
 	require.NoError(t, err)
 	// Set all signatures.
-	err = w.SetSignatures(txSigV2, aux2SigV2, signing.SignatureV2{
+	w.SetSignatures(txSigV2, aux2SigV2, signing.SignatureV2{
 		PubKey: feepayerPk,
 		Data: &signing.SingleSignatureData{
 			SignMode:  signing.SignMode_SIGN_MODE_DIRECT,
@@ -157,7 +154,6 @@ func TestBuilderWithAux(t *testing.T) {
 		},
 		Sequence: 22,
 	})
-	require.NoError(t, err)
 
 	// Make sure tx is correct.
 	txBz, err := txConfig.TxEncoder()(w.GetTx())

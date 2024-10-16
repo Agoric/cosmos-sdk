@@ -12,35 +12,27 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/metadata"
 
-	_ "cosmossdk.io/x/accounts"
-	_ "cosmossdk.io/x/bank"
-	banktypes "cosmossdk.io/x/bank/types"
-	_ "cosmossdk.io/x/consensus"
-	_ "cosmossdk.io/x/staking"
-	stakingtypes "cosmossdk.io/x/staking/types"
-
 	"github.com/cosmos/cosmos-sdk/client"
 	reflectionv1 "github.com/cosmos/cosmos-sdk/client/grpc/reflection"
 	clienttx "github.com/cosmos/cosmos-sdk/client/tx"
 	"github.com/cosmos/cosmos-sdk/codec"
 	reflectionv2 "github.com/cosmos/cosmos-sdk/server/grpc/reflection/v2alpha1"
-	"github.com/cosmos/cosmos-sdk/testutil/configurator"
 	"github.com/cosmos/cosmos-sdk/testutil/network"
 	"github.com/cosmos/cosmos-sdk/testutil/testdata"
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	grpctypes "github.com/cosmos/cosmos-sdk/types/grpc"
 	txtypes "github.com/cosmos/cosmos-sdk/types/tx"
 	"github.com/cosmos/cosmos-sdk/types/tx/signing"
-	_ "github.com/cosmos/cosmos-sdk/x/auth"
 	authclient "github.com/cosmos/cosmos-sdk/x/auth/client"
-	_ "github.com/cosmos/cosmos-sdk/x/auth/tx/config"
+	banktypes "github.com/cosmos/cosmos-sdk/x/bank/types"
+	stakingtypes "github.com/cosmos/cosmos-sdk/x/staking/types"
 )
 
 type IntegrationTestSuite struct {
 	suite.Suite
 
 	cfg     network.Config
-	network network.NetworkI
+	network *network.Network
 	conn    *grpc.ClientConn
 }
 
@@ -48,16 +40,7 @@ func (s *IntegrationTestSuite) SetupSuite() {
 	var err error
 	s.T().Log("setting up integration test suite")
 
-	s.cfg, err = network.DefaultConfigWithAppConfig(configurator.NewAppConfig(
-		configurator.AccountsModule(),
-		configurator.AuthModule(),
-		configurator.BankModule(),
-		configurator.GenutilModule(),
-		configurator.StakingModule(),
-		configurator.ConsensusModule(),
-		configurator.TxModule(),
-		configurator.ValidateModule(),
-	))
+	s.cfg, err = network.DefaultConfigWithAppConfig(network.MinimumAppConfig())
 	s.NoError(err)
 	s.cfg.NumValidators = 1
 
@@ -67,9 +50,9 @@ func (s *IntegrationTestSuite) SetupSuite() {
 	_, err = s.network.WaitForHeight(2)
 	s.Require().NoError(err)
 
-	val0 := s.network.GetValidators()[0]
-	s.conn, err = grpc.NewClient(
-		val0.GetAppConfig().GRPC.Address,
+	val0 := s.network.Validators[0]
+	s.conn, err = grpc.Dial( //nolint:staticcheck // ignore this line for this linter
+		val0.AppConfig.GRPC.Address,
 		grpc.WithInsecure(), //nolint:staticcheck // ignore SA1019, we don't need to use a secure connection for tests
 		grpc.WithDefaultCallOptions(grpc.ForceCodec(codec.NewProtoCodec(s.cfg.InterfaceRegistry).GRPCCodec())),
 	)
@@ -91,20 +74,20 @@ func (s *IntegrationTestSuite) TestGRPCServer_TestService() {
 }
 
 func (s *IntegrationTestSuite) TestGRPCServer_BankBalance() {
-	val0 := s.network.GetValidators()[0]
+	val0 := s.network.Validators[0]
 
 	// gRPC query to bank service should work
-	denom := fmt.Sprintf("%stoken", val0.GetMoniker())
+	denom := fmt.Sprintf("%stoken", val0.Moniker)
 	bankClient := banktypes.NewQueryClient(s.conn)
 	var header metadata.MD
 	bankRes, err := bankClient.Balance(
 		context.Background(),
-		&banktypes.QueryBalanceRequest{Address: val0.GetAddress().String(), Denom: denom},
+		&banktypes.QueryBalanceRequest{Address: val0.Address.String(), Denom: denom},
 		grpc.Header(&header), // Also fetch grpc header
 	)
 	s.Require().NoError(err)
 	s.Require().Equal(
-		sdk.NewCoin(denom, s.cfg.AccountTokens),
+		sdk.NewCoin(denom, s.network.Config.AccountTokens),
 		*bankRes.GetBalance(),
 	)
 	blockHeight := header.Get(grpctypes.GRPCBlockHeightHeader)
@@ -113,7 +96,7 @@ func (s *IntegrationTestSuite) TestGRPCServer_BankBalance() {
 	// Request metadata should work
 	_, err = bankClient.Balance(
 		metadata.AppendToOutgoingContext(context.Background(), grpctypes.GRPCBlockHeightHeader, "1"), // Add metadata to request
-		&banktypes.QueryBalanceRequest{Address: val0.GetAddress().String(), Denom: denom},
+		&banktypes.QueryBalanceRequest{Address: val0.Address.String(), Denom: denom},
 		grpc.Header(&header),
 	)
 	s.Require().NoError(err)
@@ -180,11 +163,11 @@ func (s *IntegrationTestSuite) TestGRPCServer_GetTxsEvent() {
 }
 
 func (s *IntegrationTestSuite) TestGRPCServer_BroadcastTx() {
-	val0 := s.network.GetValidators()[0]
+	val0 := s.network.Validators[0]
 
 	txBuilder := s.mkTxBuilder()
 
-	txBytes, err := val0.GetClientCtx().TxConfig.TxEncoder()(txBuilder.GetTx())
+	txBytes, err := val0.ClientCtx.TxConfig.TxEncoder()(txBuilder.GetTx())
 	s.Require().NoError(err)
 
 	// Broadcast the tx via gRPC.
@@ -236,7 +219,7 @@ func (s *IntegrationTestSuite) TestGRPCUnpacker() {
 	ir := s.cfg.InterfaceRegistry
 	queryClient := stakingtypes.NewQueryClient(s.conn)
 	validator, err := queryClient.Validator(context.Background(),
-		&stakingtypes.QueryValidatorRequest{ValidatorAddr: s.network.GetValidators()[0].GetValAddress().String()})
+		&stakingtypes.QueryValidatorRequest{ValidatorAddr: s.network.Validators[0].ValAddress.String()})
 	require.NoError(s.T(), err)
 
 	// no unpacked interfaces yet, so ConsAddr will be nil
@@ -254,17 +237,17 @@ func (s *IntegrationTestSuite) TestGRPCUnpacker() {
 
 // mkTxBuilder creates a TxBuilder containing a signed tx from validator 0.
 func (s *IntegrationTestSuite) mkTxBuilder() client.TxBuilder {
-	val := s.network.GetValidators()[0]
+	val := s.network.Validators[0]
 	s.Require().NoError(s.network.WaitForNextBlock())
 
 	// prepare txBuilder with msg
-	txBuilder := val.GetClientCtx().TxConfig.NewTxBuilder()
+	txBuilder := val.ClientCtx.TxConfig.NewTxBuilder()
 	feeAmount := sdk.Coins{sdk.NewInt64Coin(s.cfg.BondDenom, 10)}
 	gasLimit := testdata.NewTestGasLimit()
 	s.Require().NoError(
 		txBuilder.SetMsgs(&banktypes.MsgSend{
-			FromAddress: val.GetAddress().String(),
-			ToAddress:   val.GetAddress().String(),
+			FromAddress: val.Address.String(),
+			ToAddress:   val.Address.String(),
 			Amount:      sdk.Coins{sdk.NewInt64Coin(s.cfg.BondDenom, 10)},
 		}),
 	)
@@ -274,13 +257,13 @@ func (s *IntegrationTestSuite) mkTxBuilder() client.TxBuilder {
 
 	// setup txFactory
 	txFactory := clienttx.Factory{}.
-		WithChainID(val.GetClientCtx().ChainID).
-		WithKeybase(val.GetClientCtx().Keyring).
-		WithTxConfig(val.GetClientCtx().TxConfig).
+		WithChainID(val.ClientCtx.ChainID).
+		WithKeybase(val.ClientCtx.Keyring).
+		WithTxConfig(val.ClientCtx.TxConfig).
 		WithSignMode(signing.SignMode_SIGN_MODE_DIRECT)
 
 	// Sign Tx.
-	err := authclient.SignTx(txFactory, val.GetClientCtx(), val.GetMoniker(), txBuilder, false, true)
+	err := authclient.SignTx(txFactory, val.ClientCtx, val.Moniker, txBuilder, false, true)
 	s.Require().NoError(err)
 
 	return txBuilder

@@ -5,25 +5,30 @@ import (
 	"fmt"
 	"testing"
 
+	cmtproto "github.com/cometbft/cometbft/proto/tendermint/types"
 	"gotest.tools/v3/assert"
 
-	"cosmossdk.io/collections"
 	"cosmossdk.io/math"
-	"cosmossdk.io/x/staking/types"
 
 	simtestutil "github.com/cosmos/cosmos-sdk/testutil/sims"
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	"github.com/cosmos/cosmos-sdk/types/query"
+	"github.com/cosmos/cosmos-sdk/x/staking/types"
 )
 
 func createValidatorAccs(t *testing.T, f *fixture) ([]sdk.AccAddress, []types.Validator) {
-	t.Helper()
 	addrs, _, validators := createValidators(&testing.T{}, f, []int64{9, 8, 7})
+	header := cmtproto.Header{
+		ChainID: "HelloChain",
+		Height:  5,
+	}
 
 	// sort a copy of the validators, so that original validators does not
 	// have its order changed
 	sortedVals := make([]types.Validator, len(validators))
 	copy(sortedVals, validators)
+	hi := types.NewHistoricalInfo(header, types.Validators{Validators: sortedVals}, f.stakingKeeper.PowerReduction(f.sdkCtx))
+	assert.NilError(t, f.stakingKeeper.SetHistoricalInfo(f.sdkCtx, 5, &hi))
 
 	return addrs, validators
 }
@@ -122,7 +127,7 @@ func TestGRPCQueryDelegatorValidators(t *testing.T) {
 	qr := f.app.QueryHelper()
 	queryClient := types.NewQueryClient(qr)
 
-	params, err := f.stakingKeeper.Params.Get(ctx)
+	params, err := f.stakingKeeper.GetParams(ctx)
 	assert.NilError(t, err)
 	delValidators, err := f.stakingKeeper.GetDelegatorValidators(ctx, addrs[0], params.MaxValidators)
 	assert.NilError(t, err)
@@ -217,7 +222,7 @@ func TestGRPCQueryDelegatorValidator(t *testing.T) {
 				}
 			},
 			false,
-			"not found",
+			"no delegation for (address, validator) tuple",
 		},
 		{
 			"empty delegator address",
@@ -283,7 +288,7 @@ func TestGRPCQueryDelegation(t *testing.T) {
 	addrVal := vals[0].OperatorAddress
 	valAddr, err := sdk.ValAddressFromBech32(addrVal)
 	assert.NilError(t, err)
-	delegation, found := f.stakingKeeper.Delegations.Get(ctx, collections.Join(addrAcc, valAddr))
+	delegation, found := f.stakingKeeper.GetDelegation(ctx, addrAcc, valAddr)
 	assert.Assert(t, found)
 	var req *types.QueryDelegationRequest
 
@@ -352,7 +357,7 @@ func TestGRPCQueryDelegatorDelegations(t *testing.T) {
 	addrVal1 := vals[0].OperatorAddress
 	valAddr, err := sdk.ValAddressFromBech32(addrVal1)
 	assert.NilError(t, err)
-	delegation, found := f.stakingKeeper.Delegations.Get(ctx, collections.Join(addrAcc, valAddr))
+	delegation, found := f.stakingKeeper.GetDelegation(ctx, addrAcc, valAddr)
 	assert.Assert(t, found)
 	var req *types.QueryDelegatorDelegationsRequest
 
@@ -432,7 +437,7 @@ func TestGRPCQueryValidatorDelegations(t *testing.T) {
 	addrVal2 := valAddrs[4]
 	valAddr, err := sdk.ValAddressFromBech32(addrVal1)
 	assert.NilError(t, err)
-	delegation, found := f.stakingKeeper.Delegations.Get(ctx, collections.Join(addrAcc, valAddr))
+	delegation, found := f.stakingKeeper.GetDelegation(ctx, addrAcc, valAddr)
 	assert.Assert(t, found)
 
 	var req *types.QueryValidatorDelegationsRequest
@@ -710,9 +715,79 @@ func TestGRPCQueryPoolParameters(t *testing.T) {
 	// Query Params
 	resp, err := queryClient.Params(gocontext.Background(), &types.QueryParamsRequest{})
 	assert.NilError(t, err)
-	params, err := f.stakingKeeper.Params.Get(ctx)
+	params, err := f.stakingKeeper.GetParams(ctx)
 	assert.NilError(t, err)
 	assert.DeepEqual(t, params, resp.Params)
+}
+
+func TestGRPCQueryHistoricalInfo(t *testing.T) {
+	t.Parallel()
+	f := initFixture(t)
+
+	ctx := f.sdkCtx
+	_, _ = createValidatorAccs(t, f)
+
+	qr := f.app.QueryHelper()
+	queryClient := types.NewQueryClient(qr)
+
+	hi, found := f.stakingKeeper.GetHistoricalInfo(ctx, 5)
+	assert.Assert(t, found)
+
+	var req *types.QueryHistoricalInfoRequest
+	testCases := []struct {
+		msg       string
+		malleate  func()
+		expPass   bool
+		expErrMsg string
+	}{
+		{
+			"empty request",
+			func() {
+				req = &types.QueryHistoricalInfoRequest{}
+			},
+			false,
+			"historical info for height 0 not found",
+		},
+		{
+			"invalid request with negative height",
+			func() {
+				req = &types.QueryHistoricalInfoRequest{Height: -1}
+			},
+			false,
+			"height cannot be negative",
+		},
+		{
+			"valid request with old height",
+			func() {
+				req = &types.QueryHistoricalInfoRequest{Height: 4}
+			},
+			false,
+			"historical info for height 4 not found",
+		},
+		{
+			"valid request with current height",
+			func() {
+				req = &types.QueryHistoricalInfoRequest{Height: 5}
+			},
+			true,
+			"",
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(fmt.Sprintf("Case %s", tc.msg), func(t *testing.T) {
+			tc.malleate()
+			res, err := queryClient.HistoricalInfo(gocontext.Background(), req)
+			if tc.expPass {
+				assert.NilError(t, err)
+				assert.Assert(t, res != nil)
+				assert.Assert(t, hi.Equal(res.Hist))
+			} else {
+				assert.ErrorContains(t, err, tc.expErrMsg)
+				assert.Assert(t, res == nil)
+			}
+		})
+	}
 }
 
 func TestGRPCQueryRedelegations(t *testing.T) {
@@ -743,7 +818,7 @@ func TestGRPCQueryRedelegations(t *testing.T) {
 	assert.NilError(t, err)
 	applyValidatorSetUpdates(t, ctx, f.stakingKeeper, -1)
 
-	redel, found := f.stakingKeeper.Redelegations.Get(ctx, collections.Join3(addrAcc1.Bytes(), valAddrs[0].Bytes(), valAddrs[1].Bytes()))
+	redel, found := f.stakingKeeper.GetRedelegation(ctx, addrAcc1, val1bz, val2bz)
 	assert.Assert(t, found)
 
 	var req *types.QueryRedelegationsRequest

@@ -1,0 +1,9 @@
+{
+    "label": "Running a Node, API and CLI",
+<<<<<<<< HEAD:docs/user/run-node/_category_.json
+    "position": 1,
+========
+    "position": 0,
+>>>>>>>> upstream/release/v0.50.x:docs/build/user/run-node/_category_.json
+    "link": null
+}

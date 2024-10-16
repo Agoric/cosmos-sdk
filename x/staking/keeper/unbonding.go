@@ -2,54 +2,80 @@ package keeper
 
 import (
 	"context"
-	"errors"
+	"encoding/binary"
 
-	"cosmossdk.io/collections"
 	errorsmod "cosmossdk.io/errors"
-	"cosmossdk.io/x/staking/types"
 
 	sdk "github.com/cosmos/cosmos-sdk/types"
+	"github.com/cosmos/cosmos-sdk/x/staking/types"
 )
 
 // IncrementUnbondingID increments and returns a unique ID for an unbonding operation
 func (k Keeper) IncrementUnbondingID(ctx context.Context) (unbondingID uint64, err error) {
-	unbondingID, err = k.UnbondingID.Next(ctx)
+	store := k.storeService.OpenKVStore(ctx)
+	bz, err := store.Get(types.UnbondingIDKey)
 	if err != nil {
 		return 0, err
 	}
+
+	if bz != nil {
+		unbondingID = binary.BigEndian.Uint64(bz)
+	}
+
 	unbondingID++
+
+	// Convert back into bytes for storage
+	bz = make([]byte, 8)
+	binary.BigEndian.PutUint64(bz, unbondingID)
+
+	if err = store.Set(types.UnbondingIDKey, bz); err != nil {
+		return 0, err
+	}
 
 	return unbondingID, err
 }
 
 // DeleteUnbondingIndex removes a mapping from UnbondingId to unbonding operation
 func (k Keeper) DeleteUnbondingIndex(ctx context.Context, id uint64) error {
-	return k.UnbondingIndex.Remove(ctx, id)
+	store := k.storeService.OpenKVStore(ctx)
+	return store.Delete(types.GetUnbondingIndexKey(id))
 }
 
 // GetUnbondingType returns the enum type of unbonding which is any of
 // {UnbondingDelegation | Redelegation | ValidatorUnbonding}
 func (k Keeper) GetUnbondingType(ctx context.Context, id uint64) (unbondingType types.UnbondingType, err error) {
-	ubdType, err := k.UnbondingType.Get(ctx, id)
-	if errors.Is(err, collections.ErrNotFound) {
+	store := k.storeService.OpenKVStore(ctx)
+
+	bz, err := store.Get(types.GetUnbondingTypeKey(id))
+	if err != nil {
+		return unbondingType, err
+	}
+
+	if bz == nil {
 		return unbondingType, types.ErrNoUnbondingType
 	}
-	return types.UnbondingType(ubdType), err
+
+	return types.UnbondingType(binary.BigEndian.Uint64(bz)), nil
 }
 
 // SetUnbondingType sets the enum type of unbonding which is any of
 // {UnbondingDelegation | Redelegation | ValidatorUnbonding}
 func (k Keeper) SetUnbondingType(ctx context.Context, id uint64, unbondingType types.UnbondingType) error {
-	return k.UnbondingType.Set(ctx, id, uint64(unbondingType))
+	store := k.storeService.OpenKVStore(ctx)
+
+	// Convert into bytes for storage
+	bz := make([]byte, 8)
+	binary.BigEndian.PutUint64(bz, uint64(unbondingType))
+
+	return store.Set(types.GetUnbondingTypeKey(id), bz)
 }
 
 // GetUnbondingDelegationByUnbondingID returns a unbonding delegation that has an unbonding delegation entry with a certain ID
 func (k Keeper) GetUnbondingDelegationByUnbondingID(ctx context.Context, id uint64) (ubd types.UnbondingDelegation, err error) {
-	ubdKey, err := k.UnbondingIndex.Get(ctx, id) // ubdKey => [UnbondingDelegationKey(Prefix)+len(delAddr)+delAddr+len(valAddr)+valAddr]
+	store := k.storeService.OpenKVStore(ctx)
+
+	ubdKey, err := store.Get(types.GetUnbondingIndexKey(id))
 	if err != nil {
-		if errors.Is(err, collections.ErrNotFound) {
-			return types.UnbondingDelegation{}, types.ErrNoUnbondingDelegation
-		}
 		return types.UnbondingDelegation{}, err
 	}
 
@@ -57,16 +83,18 @@ func (k Keeper) GetUnbondingDelegationByUnbondingID(ctx context.Context, id uint
 		return types.UnbondingDelegation{}, types.ErrNoUnbondingDelegation
 	}
 
-	// remove prefix bytes and length bytes (since ubdKey obtained is prefixed by UnbondingDelegationKey prefix and length of the address)
-	delAddr := ubdKey[2 : (len(ubdKey)/2)+1]
-	// remove prefix length bytes
-	valAddr := ubdKey[2+len(ubdKey)/2:]
-
-	ubd, err = k.UnbondingDelegations.Get(ctx, collections.Join(delAddr, valAddr))
+	value, err := store.Get(ubdKey)
 	if err != nil {
-		if errors.Is(err, collections.ErrNotFound) {
-			return types.UnbondingDelegation{}, types.ErrNoUnbondingDelegation
-		}
+		return types.UnbondingDelegation{}, err
+	}
+
+	if value == nil {
+		return types.UnbondingDelegation{}, types.ErrNoUnbondingDelegation
+	}
+
+	ubd, err = types.UnmarshalUBD(k.cdc, value)
+	// An error here means that what we got wasn't the right type
+	if err != nil {
 		return types.UnbondingDelegation{}, err
 	}
 
@@ -75,13 +103,10 @@ func (k Keeper) GetUnbondingDelegationByUnbondingID(ctx context.Context, id uint
 
 // GetRedelegationByUnbondingID returns a unbonding delegation that has an unbonding delegation entry with a certain ID
 func (k Keeper) GetRedelegationByUnbondingID(ctx context.Context, id uint64) (red types.Redelegation, err error) {
-	store := k.KVStoreService.OpenKVStore(ctx)
+	store := k.storeService.OpenKVStore(ctx)
 
-	redKey, err := k.UnbondingIndex.Get(ctx, id)
+	redKey, err := store.Get(types.GetUnbondingIndexKey(id))
 	if err != nil {
-		if errors.Is(err, collections.ErrNotFound) {
-			return types.Redelegation{}, types.ErrNoRedelegation
-		}
 		return types.Redelegation{}, err
 	}
 
@@ -109,13 +134,10 @@ func (k Keeper) GetRedelegationByUnbondingID(ctx context.Context, id uint64) (re
 
 // GetValidatorByUnbondingID returns the validator that is unbonding with a certain unbonding op ID
 func (k Keeper) GetValidatorByUnbondingID(ctx context.Context, id uint64) (val types.Validator, err error) {
-	store := k.KVStoreService.OpenKVStore(ctx)
+	store := k.storeService.OpenKVStore(ctx)
 
-	valKey, err := k.UnbondingIndex.Get(ctx, id)
+	valKey, err := store.Get(types.GetUnbondingIndexKey(id))
 	if err != nil {
-		if errors.Is(err, collections.ErrNotFound) {
-			return types.Validator{}, types.ErrNoValidatorFound
-		}
 		return types.Validator{}, err
 	}
 
@@ -145,6 +167,7 @@ func (k Keeper) GetValidatorByUnbondingID(ctx context.Context, id uint64) (val t
 // by the unbondingID of an UnbondingDelegationEntry that it contains Note, it does not
 // set the unbonding delegation itself, use SetUnbondingDelegation(ctx, ubd) for that
 func (k Keeper) SetUnbondingDelegationByUnbondingID(ctx context.Context, ubd types.UnbondingDelegation, id uint64) error {
+	store := k.storeService.OpenKVStore(ctx)
 	delAddr, err := k.authKeeper.AddressCodec().StringToBytes(ubd.DelegatorAddress)
 	if err != nil {
 		return err
@@ -155,7 +178,7 @@ func (k Keeper) SetUnbondingDelegationByUnbondingID(ctx context.Context, ubd typ
 	}
 
 	ubdKey := types.GetUBDKey(delAddr, valAddr)
-	if err = k.UnbondingIndex.Set(ctx, id, ubdKey); err != nil {
+	if err = store.Set(types.GetUnbondingIndexKey(id), ubdKey); err != nil {
 		return err
 	}
 
@@ -163,9 +186,11 @@ func (k Keeper) SetUnbondingDelegationByUnbondingID(ctx context.Context, ubd typ
 	return k.SetUnbondingType(ctx, id, types.UnbondingType_UnbondingDelegation)
 }
 
-// SetRedelegationByUnbondingID sets an index to look up a Redelegation by the unbondingID of a RedelegationEntry that it contains
+// SetRedelegationByUnbondingID sets an index to look up an Redelegation by the unbondingID of an RedelegationEntry that it contains
 // Note, it does not set the redelegation itself, use SetRedelegation(ctx, red) for that
 func (k Keeper) SetRedelegationByUnbondingID(ctx context.Context, red types.Redelegation, id uint64) error {
+	store := k.storeService.OpenKVStore(ctx)
+
 	delAddr, err := k.authKeeper.AddressCodec().StringToBytes(red.DelegatorAddress)
 	if err != nil {
 		return err
@@ -182,7 +207,7 @@ func (k Keeper) SetRedelegationByUnbondingID(ctx context.Context, red types.Rede
 	}
 
 	redKey := types.GetREDKey(delAddr, valSrcAddr, valDstAddr)
-	if err = k.UnbondingIndex.Set(ctx, id, redKey); err != nil {
+	if err = store.Set(types.GetUnbondingIndexKey(id), redKey); err != nil {
 		return err
 	}
 
@@ -193,13 +218,15 @@ func (k Keeper) SetRedelegationByUnbondingID(ctx context.Context, red types.Rede
 // SetValidatorByUnbondingID sets an index to look up a Validator by the unbondingID corresponding to its current unbonding
 // Note, it does not set the validator itself, use SetValidator(ctx, val) for that
 func (k Keeper) SetValidatorByUnbondingID(ctx context.Context, val types.Validator, id uint64) error {
+	store := k.storeService.OpenKVStore(ctx)
+
 	valAddr, err := k.validatorAddressCodec.StringToBytes(val.OperatorAddress)
 	if err != nil {
 		return err
 	}
 
 	valKey := types.GetValidatorKey(valAddr)
-	if err = k.UnbondingIndex.Set(ctx, id, valKey); err != nil {
+	if err = store.Set(types.GetUnbondingIndexKey(id), valKey); err != nil {
 		return err
 	}
 
@@ -282,8 +309,9 @@ func (k Keeper) unbondingDelegationEntryCanComplete(ctx context.Context, id uint
 	}
 	ubd.Entries[i].UnbondingOnHoldRefCount--
 
+	sdkCtx := sdk.UnwrapSDKContext(ctx)
 	// Check if entry is matured.
-	if !ubd.Entries[i].OnHold() && ubd.Entries[i].IsMature(k.HeaderService.HeaderInfo(ctx).Time) {
+	if !ubd.Entries[i].OnHold() && ubd.Entries[i].IsMature(sdkCtx.BlockHeader().Time) {
 		// If matured, complete it.
 		delegatorAddress, err := k.authKeeper.AddressCodec().StringToBytes(ubd.DelegatorAddress)
 		if err != nil {
@@ -344,8 +372,8 @@ func (k Keeper) redelegationEntryCanComplete(ctx context.Context, id uint64) err
 	}
 	red.Entries[i].UnbondingOnHoldRefCount--
 
-	headerInfo := k.HeaderService.HeaderInfo(ctx)
-	if !red.Entries[i].OnHold() && red.Entries[i].IsMature(headerInfo.Time) {
+	sdkCtx := sdk.UnwrapSDKContext(ctx)
+	if !red.Entries[i].OnHold() && red.Entries[i].IsMature(sdkCtx.BlockHeader().Time) {
 		// If matured, complete it.
 		// Remove entry
 		red.RemoveEntry(int64(i))

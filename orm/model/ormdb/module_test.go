@@ -4,10 +4,11 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"errors"
+	"fmt"
 	"strings"
 	"testing"
 
+	dbm "github.com/cosmos/cosmos-db"
 	"github.com/golang/mock/gomock"
 	"gotest.tools/v3/assert"
 	"gotest.tools/v3/golden"
@@ -15,11 +16,11 @@ import (
 	appv1alpha1 "cosmossdk.io/api/cosmos/app/v1alpha1"
 	ormmodulev1alpha1 "cosmossdk.io/api/cosmos/orm/module/v1alpha1"
 	ormv1alpha1 "cosmossdk.io/api/cosmos/orm/v1alpha1"
+	"cosmossdk.io/core/appconfig"
+	"cosmossdk.io/core/appmodule"
 	"cosmossdk.io/core/genesis"
-	corestore "cosmossdk.io/core/store"
-	coretesting "cosmossdk.io/core/testing"
+	"cosmossdk.io/core/store"
 	"cosmossdk.io/depinject"
-	"cosmossdk.io/depinject/appconfig"
 	_ "cosmossdk.io/orm" // required for ORM module registration
 	"cosmossdk.io/orm/internal/testkv"
 	"cosmossdk.io/orm/internal/testpb"
@@ -35,8 +36,8 @@ import (
 
 func init() {
 	// this registers the test module with the module registry
-	appconfig.RegisterModule(&testpb.Module{},
-		appconfig.Provide(NewKeeper),
+	appmodule.Register(&testpb.Module{},
+		appmodule.Provide(NewKeeper),
 	)
 }
 
@@ -103,7 +104,7 @@ func (k keeper) Burn(ctx context.Context, acct, denom string, amount uint64) err
 	}
 
 	if amount > supply.Amount {
-		return errors.New("insufficient supply")
+		return fmt.Errorf("insufficient supply")
 	}
 
 	supply.Amount -= amount
@@ -171,7 +172,7 @@ func (k keeper) safeSubBalance(ctx context.Context, acct, denom string, amount u
 	}
 
 	if amount > balance.Amount {
-		return errors.New("insufficient funds")
+		return fmt.Errorf("insufficient funds")
 	}
 
 	balance.Amount -= amount
@@ -257,8 +258,7 @@ func TestModuleDB(t *testing.T) {
 	testkv.AssertBackendsEqual(t, backend, backend2)
 }
 
-func runSimpleBankTests(t *testing.T, k Keeper, ctx context.Context) {
-	t.Helper()
+func runSimpleBankTests(t *testing.T, k Keeper, ctx context.Context) { // nolint:revive // test function
 	// mint coins
 	denom := "foo"
 	acct1 := "bob"
@@ -357,15 +357,15 @@ func TestHooks(t *testing.T) {
 }
 
 type testStoreService struct {
-	db corestore.KVStoreWithBatch
+	db dbm.DB
 }
 
-func (t testStoreService) OpenKVStore(context.Context) corestore.KVStore {
-	return testkv.TestStore{Db: t.db}
+func (t testStoreService) OpenKVStore(context.Context) store.KVStore {
+	return t.db
 }
 
-func (t testStoreService) OpenMemoryStore(context.Context) corestore.KVStore {
-	return testkv.TestStore{Db: t.db}
+func (t testStoreService) OpenMemoryStore(context.Context) store.KVStore {
+	return t.db
 }
 
 func TestGetBackendResolver(t *testing.T) {
@@ -389,13 +389,13 @@ func TestGetBackendResolver(t *testing.T) {
 			},
 		},
 	}, ormdb.ModuleDBOptions{
-		MemoryStoreService: testStoreService{db: coretesting.NewMemDB()},
+		MemoryStoreService: testStoreService{db: dbm.NewMemDB()},
 	})
 	assert.NilError(t, err)
 }
 
-func ProvideTestRuntime() corestore.KVStoreService {
-	return testStoreService{db: coretesting.NewMemDB()}
+func ProvideTestRuntime() store.KVStoreService {
+	return testStoreService{db: dbm.NewMemDB()}
 }
 
 func TestAppConfigModule(t *testing.T) {

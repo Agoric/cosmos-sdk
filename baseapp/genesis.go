@@ -4,6 +4,8 @@ import (
 	"errors"
 
 	"github.com/cometbft/cometbft/abci/types"
+
+	"cosmossdk.io/core/genesis"
 )
 
 // ExecuteGenesisTx implements a genesis TxHandler used to execute a genTxs (from genutil).

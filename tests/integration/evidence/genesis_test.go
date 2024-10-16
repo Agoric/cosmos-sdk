@@ -5,6 +5,7 @@ import (
 	"testing"
 	"time"
 
+	cmtproto "github.com/cometbft/cometbft/proto/tendermint/types"
 	"github.com/stretchr/testify/require"
 	"github.com/stretchr/testify/suite"
 
@@ -13,6 +14,7 @@ import (
 	"cosmossdk.io/x/evidence"
 	"cosmossdk.io/x/evidence/exported"
 	"cosmossdk.io/x/evidence/keeper"
+	"cosmossdk.io/x/evidence/testutil"
 	"cosmossdk.io/x/evidence/types"
 
 	"github.com/cosmos/cosmos-sdk/crypto/keys/ed25519"
@@ -33,12 +35,12 @@ func (suite *GenesisTestSuite) SetupTest() {
 	app, err := simtestutil.Setup(
 		depinject.Configs(
 			depinject.Supply(log.NewNopLogger()),
-			AppConfig,
+			testutil.AppConfig,
 		),
 		&evidenceKeeper)
 	require.NoError(suite.T(), err)
 
-	suite.ctx = app.BaseApp.NewContext(false)
+	suite.ctx = app.BaseApp.NewContextLegacy(false, cmtproto.Header{Height: 1})
 	suite.keeper = evidenceKeeper
 }
 
@@ -105,12 +107,13 @@ func (suite *GenesisTestSuite) TestInitGenesis() {
 			tc.malleate()
 
 			if tc.expPass {
-				err := evidence.InitGenesis(suite.ctx, suite.keeper, genesisState)
-				suite.NoError(err)
+				suite.NotPanics(func() {
+					evidence.InitGenesis(suite.ctx, suite.keeper, genesisState)
+				})
 			} else {
-				err := evidence.InitGenesis(suite.ctx, suite.keeper, genesisState)
-				suite.Error(err)
-
+				suite.Panics(func() {
+					evidence.InitGenesis(suite.ctx, suite.keeper, genesisState)
+				})
 			}
 
 			tc.posttests()
@@ -150,13 +153,13 @@ func (suite *GenesisTestSuite) TestExportGenesis() {
 			tc.malleate()
 
 			if tc.expPass {
-
-				_, err := evidence.ExportGenesis(suite.ctx, suite.keeper)
-				suite.Require().NoError(err)
-
+				suite.NotPanics(func() {
+					evidence.ExportGenesis(suite.ctx, suite.keeper)
+				})
 			} else {
-				_, err := evidence.ExportGenesis(suite.ctx, suite.keeper)
-				suite.Require().Error(err)
+				suite.Panics(func() {
+					evidence.ExportGenesis(suite.ctx, suite.keeper)
+				})
 			}
 
 			tc.posttests()

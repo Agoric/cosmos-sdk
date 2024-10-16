@@ -4,11 +4,11 @@ import (
 	"fmt"
 	"testing"
 
-	abci "github.com/cometbft/cometbft/api/cometbft/abci/v1"
-	cmtproto "github.com/cometbft/cometbft/api/cometbft/types/v1"
+	abci "github.com/cometbft/cometbft/abci/types"
+	cmtproto "github.com/cometbft/cometbft/proto/tendermint/types"
+	dbm "github.com/cosmos/cosmos-db"
 	"gotest.tools/v3/assert"
 
-	coretesting "cosmossdk.io/core/testing"
 	"cosmossdk.io/log"
 	"cosmossdk.io/simapp"
 
@@ -16,7 +16,7 @@ import (
 )
 
 func TestRollback(t *testing.T) {
-	db := coretesting.NewMemDB()
+	db := dbm.NewMemDB()
 	options := simapp.SetupOptions{
 		Logger:  log.NewNopLogger(),
 		DB:      db,
@@ -31,19 +31,16 @@ func TestRollback(t *testing.T) {
 			AppHash: app.LastCommitID().Hash,
 		}
 
-		_, err := app.FinalizeBlock(&abci.FinalizeBlockRequest{
+		app.FinalizeBlock(&abci.RequestFinalizeBlock{
 			Height: header.Height,
 		})
-		assert.NilError(t, err)
 		ctx := app.NewContextLegacy(false, header)
 		store := ctx.KVStore(app.GetKey("bank"))
 		store.Set([]byte("key"), []byte(fmt.Sprintf("value%d", i)))
-		_, err = app.FinalizeBlock(&abci.FinalizeBlockRequest{
+		app.FinalizeBlock(&abci.RequestFinalizeBlock{
 			Height: header.Height,
 		})
-		assert.NilError(t, err)
-		_, err = app.Commit()
-		assert.NilError(t, err)
+		app.Commit()
 	}
 
 	assert.Equal(t, ver0+10, app.LastBlockHeight())
@@ -66,17 +63,14 @@ func TestRollback(t *testing.T) {
 			Height:  ver0 + i,
 			AppHash: app.LastCommitID().Hash,
 		}
-		_, err := app.FinalizeBlock(&abci.FinalizeBlockRequest{Height: header.Height})
-		assert.NilError(t, err)
+		app.FinalizeBlock(&abci.RequestFinalizeBlock{Height: header.Height})
 		ctx := app.NewContextLegacy(false, header)
 		store := ctx.KVStore(app.GetKey("bank"))
 		store.Set([]byte("key"), []byte(fmt.Sprintf("VALUE%d", i)))
-		_, err = app.FinalizeBlock(&abci.FinalizeBlockRequest{
+		app.FinalizeBlock(&abci.RequestFinalizeBlock{
 			Height: header.Height,
 		})
-		assert.NilError(t, err)
-		_, err = app.Commit()
-		assert.NilError(t, err)
+		app.Commit()
 	}
 
 	assert.Equal(t, ver0+10, app.LastBlockHeight())

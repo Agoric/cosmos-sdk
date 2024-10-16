@@ -1,11 +1,10 @@
 package types
 
 import (
-	"context"
+	context "context"
 
 	sdkmath "cosmossdk.io/math"
 
-	cryptotypes "github.com/cosmos/cosmos-sdk/crypto/types"
 	sdk "github.com/cosmos/cosmos-sdk/types"
 )
 
@@ -112,15 +111,6 @@ func (h MultiStakingHooks) BeforeValidatorSlashed(ctx context.Context, valAddr s
 func (h MultiStakingHooks) AfterUnbondingInitiated(ctx context.Context, id uint64) error {
 	for i := range h {
 		if err := h[i].AfterUnbondingInitiated(ctx, id); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
-func (h MultiStakingHooks) AfterConsensusPubKeyUpdate(ctx context.Context, oldPubKey, newPubKey cryptotypes.PubKey, rotationFee sdk.Coin) error {
-	for i := range h {
-		if err := h[i].AfterConsensusPubKeyUpdate(ctx, oldPubKey, newPubKey, rotationFee); err != nil {
 			return err
 		}
 	}

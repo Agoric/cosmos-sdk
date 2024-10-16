@@ -43,7 +43,7 @@ func cosmosIntEncoder(_ *Encoder, v protoreflect.Value, w io.Writer) error {
 	}
 }
 
-// cosmosDecEncoder provides legacy compatible encoding for cosmos.Dec types. These are sometimes
+// cosmosDecEncoder provides legacy compatible encoding for cosmos.Dec and cosmos.Int types. These are sometimes
 // represented as strings in pulsar messages and sometimes as bytes.  This encoder handles both cases.
 func cosmosDecEncoder(_ *Encoder, v protoreflect.Value, w io.Writer) error {
 	switch val := v.Interface().(type) {
@@ -51,12 +51,7 @@ func cosmosDecEncoder(_ *Encoder, v protoreflect.Value, w io.Writer) error {
 		if val == "" {
 			return jsonMarshal(w, "0")
 		}
-		var dec math.LegacyDec
-		err := dec.Unmarshal([]byte(val))
-		if err != nil {
-			return fmt.Errorf("failed to unmarshal for Amino JSON encoding; string %q into Dec: %w", val, err)
-		}
-		return jsonMarshal(w, dec.String())
+		return jsonMarshal(w, val)
 	case []byte:
 		if len(val) == 0 {
 			return jsonMarshal(w, "0")
@@ -98,7 +93,7 @@ func nullSliceAsEmptyEncoder(enc *Encoder, v protoreflect.Value, w io.Writer) er
 func cosmosInlineJSON(_ *Encoder, v protoreflect.Value, w io.Writer) error {
 	switch bz := v.Interface().(type) {
 	case []byte:
-		json, err := sortedJsonStringify(bz)
+		json, err := sortedJSONStringify(bz)
 		if err != nil {
 			return errors.Wrap(err, "could not normalize JSON")
 		}
@@ -130,40 +125,27 @@ func keyFieldEncoder(_ *Encoder, msg protoreflect.Message, w io.Writer) error {
 }
 
 type moduleAccountPretty struct {
-	AccountNumber uint64   `json:"account_number"`
 	Address       string   `json:"address"`
+	PubKey        string   `json:"public_key"`
+	AccountNumber uint64   `json:"account_number"`
+	Sequence      uint64   `json:"sequence"`
 	Name          string   `json:"name"`
 	Permissions   []string `json:"permissions"`
-	PubKey        string   `json:"public_key"`
-	Sequence      uint64   `json:"sequence"`
 }
 
 // moduleAccountEncoder replicates the behavior in
 // https://github.com/cosmos/cosmos-sdk/blob/41a3dfeced2953beba3a7d11ec798d17ee19f506/x/auth/types/account.go#L230-L254
 func moduleAccountEncoder(_ *Encoder, msg protoreflect.Message, w io.Writer) error {
-	ma := &authapi.ModuleAccount{}
-	msgDesc := msg.Descriptor()
-	if msgDesc.FullName() != ma.ProtoReflect().Descriptor().FullName() {
-		return errors.New("moduleAccountEncoder: msg not a auth.ModuleAccount")
-	}
-	fields := msgDesc.Fields()
-
+	ma := msg.Interface().(*authapi.ModuleAccount)
 	pretty := moduleAccountPretty{
-		PubKey: "",
-		Name:   msg.Get(fields.ByName("name")).String(),
+		PubKey:      "",
+		Name:        ma.Name,
+		Permissions: ma.Permissions,
 	}
-	permissions := msg.Get(fields.ByName("permissions")).List()
-	for i := 0; i < permissions.Len(); i++ {
-		pretty.Permissions = append(pretty.Permissions, permissions.Get(i).String())
-	}
-
-	if msg.Has(fields.ByName("base_account")) {
-		baseAccount := msg.Get(fields.ByName("base_account"))
-		baMsg := baseAccount.Message()
-		bamdFields := baMsg.Descriptor().Fields()
-		pretty.Address = baMsg.Get(bamdFields.ByName("address")).String()
-		pretty.AccountNumber = baMsg.Get(bamdFields.ByName("account_number")).Uint()
-		pretty.Sequence = baMsg.Get(bamdFields.ByName("sequence")).Uint()
+	if ma.BaseAccount != nil {
+		pretty.Address = ma.BaseAccount.Address
+		pretty.AccountNumber = ma.BaseAccount.AccountNumber
+		pretty.Sequence = ma.BaseAccount.Sequence
 	} else {
 		pretty.Address = ""
 		pretty.AccountNumber = 0
@@ -184,34 +166,29 @@ func moduleAccountEncoder(_ *Encoder, msg protoreflect.Message, w io.Writer) err
 // also see:
 // https://github.com/cosmos/cosmos-sdk/blob/b49f948b36bc991db5be431607b475633aed697e/proto/cosmos/crypto/multisig/keys.proto#L15/
 func thresholdStringEncoder(enc *Encoder, msg protoreflect.Message, w io.Writer) error {
-	pk := &multisig.LegacyAminoPubKey{}
-	msgDesc := msg.Descriptor()
-	fields := msgDesc.Fields()
-	if msgDesc.FullName() != pk.ProtoReflect().Descriptor().FullName() {
+	pk, ok := msg.Interface().(*multisig.LegacyAminoPubKey)
+	if !ok {
 		return errors.New("thresholdStringEncoder: msg not a multisig.LegacyAminoPubKey")
 	}
-
-	pubkeysField := fields.ByName("public_keys")
-	pubkeys := msg.Get(pubkeysField).List()
-
-	_, err := io.WriteString(w, `{"pubkeys":`)
+	_, err := fmt.Fprintf(w, `{"threshold":"%d","pubkeys":`, pk.Threshold)
 	if err != nil {
 		return err
 	}
-	if pubkeys.Len() == 0 {
-		_, err := io.WriteString(w, `[]`)
-		if err != nil {
-			return err
-		}
-	} else {
-		err := enc.marshalList(pubkeys, pubkeysField, w)
-		if err != nil {
-			return err
-		}
+
+	if len(pk.PublicKeys) == 0 {
+		_, err = io.WriteString(w, `[]}`)
+		return err
 	}
 
-	threshold := fields.ByName("threshold")
-	_, err = fmt.Fprintf(w, `,"threshold":"%d"}`, msg.Get(threshold).Uint())
+	fields := msg.Descriptor().Fields()
+	pubkeysField := fields.ByName("public_keys")
+	pubkeys := msg.Get(pubkeysField).List()
+
+	err = enc.marshalList(pubkeys, pubkeysField, w)
+	if err != nil {
+		return err
+	}
+	_, err = io.WriteString(w, `}`)
 	return err
 }
 
@@ -240,8 +217,8 @@ func sortedObject(obj interface{}) interface{} {
 	}
 }
 
-// sortedJsonStringify returns a JSON with objects sorted by key.
-func sortedJsonStringify(jsonBytes []byte) ([]byte, error) {
+// sortedJSONStringify returns a JSON with objects sorted by key.
+func sortedJSONStringify(jsonBytes []byte) ([]byte, error) {
 	var obj interface{}
 	if err := json.Unmarshal(jsonBytes, &obj); err != nil {
 		return nil, errors.New("invalid JSON bytes")
