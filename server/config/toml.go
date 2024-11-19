@@ -81,6 +81,12 @@ iavl-cache-size = {{ .BaseConfig.IAVLCacheSize }}
 # Default is false.
 iavl-disable-fastnode = {{ .BaseConfig.IAVLDisableFastNode }}
 
+# ABCIClientType selects the type of ABCI client.
+# Valid settings are "committing" (default) or "local".
+# The committing client allows greater query parallelism,
+# but the local client is more defensive.
+abci-client-type = "{{ .BaseConfig.ABCIClientType }}"
+
 # AppDBBackend defines the database backend type to use for the application and snapshots DBs.
 # An empty string indicates that a fallback will be used.
 # The fallback is the db_backend value set in CometBFT's config.toml.

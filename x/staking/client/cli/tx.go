@@ -6,6 +6,7 @@ import (
 	"strconv"
 	"strings"
 
+	"cosmossdk.io/math"
 	"github.com/spf13/cobra"
 	flag "github.com/spf13/pflag"
 

@@ -3,10 +3,10 @@ package keeper_test
 import (
 	"time"
 
+	"cosmossdk.io/math"
 	"github.com/golang/mock/gomock"
 
-	"cosmossdk.io/math"
-
+	"cosmossdk.io/x/staking/types"
 	"github.com/cosmos/cosmos-sdk/codec/address"
 	simtestutil "github.com/cosmos/cosmos-sdk/testutil/sims"
 	sdk "github.com/cosmos/cosmos-sdk/types"
@@ -237,6 +237,115 @@ func (s *KeeperTestSuite) TestDelegationsByValIndex() {
 	require.Len(dels, 0)
 }
 
+func (s *KeeperTestSuite) TestTransferDelegation() {
+	ctx, keeper := s.ctx, s.stakingKeeper
+	require := s.Require()
+
+	addrDels, valAddrs := createValAddrs(3)
+
+	// construct the validators
+	amts := []math.Int{math.NewInt(9), math.NewInt(8), math.NewInt(7)}
+	var validators [3]types.Validator
+	for i, amt := range amts {
+		validators[i] = testutil.NewValidator(s.T(), valAddrs[i], PKs[i])
+		validators[i], _ = validators[i].AddTokensFromDel(amt)
+	}
+	validators[0] = stakingkeeper.TestingUpdateValidator(keeper, ctx, validators[0], true)
+	validators[1] = stakingkeeper.TestingUpdateValidator(keeper, ctx, validators[1], true)
+	validators[2] = stakingkeeper.TestingUpdateValidator(keeper, ctx, validators[2], true)
+
+	// try a transfer when there's nothing
+	transferred, err := keeper.TransferDelegation(ctx, addrDels[0], addrDels[1], valAddrs[0], math.LegacyNewDec(1000))
+	require.NoError(err)
+	require.Equal(math.LegacyZeroDec(), transferred)
+
+	// stake some tokens
+	bond1to1 := types.NewDelegation(addrDels[0].String(), valAddrs[0].String(), math.LegacyNewDec(99))
+	err = keeper.SetDelegation(ctx, bond1to1)
+	require.NoError(err)
+	// stake to an unrelated validator so implementation has to skip it
+	bond1to3 := types.NewDelegation(addrDels[0].String(), valAddrs[2].String(), math.LegacyNewDec(9))
+	err = keeper.SetDelegation(ctx, bond1to3)
+	require.NoError(err)
+
+	// transfer nothing
+	transferred, err = keeper.TransferDelegation(ctx, addrDels[0], addrDels[1], valAddrs[0], math.LegacyZeroDec())
+	require.NoError(err)
+	require.Equal(math.LegacyZeroDec(), transferred)
+
+	// partial transfer, empty recipient
+	transferred, err = keeper.TransferDelegation(ctx, addrDels[0], addrDels[1], valAddrs[0], math.LegacyNewDec(10))
+	require.NoError(err)
+	require.Equal(math.LegacyNewDec(10), transferred)
+	resBond, err := keeper.GetDelegation(ctx, addrDels[0], valAddrs[0])
+	require.NoError(err)
+	require.Equal(math.LegacyNewDec(89), resBond.Shares)
+	resBond, err = keeper.GetDelegation(ctx, addrDels[1], valAddrs[0])
+	require.NoError(err)
+	require.Equal(math.LegacyNewDec(10), resBond.Shares)
+
+	// partial transfer, existing recipient
+	transferred, err = keeper.TransferDelegation(ctx, addrDels[0], addrDels[1], valAddrs[0], math.LegacyNewDec(11))
+	require.NoError(err)
+	require.Equal(transferred, math.LegacyNewDec(11))
+	resBond, err = keeper.GetDelegation(ctx, addrDels[0], valAddrs[0])
+	require.NoError(err)
+	require.Equal(math.LegacyNewDec(78), resBond.Shares)
+	resBond, err = keeper.GetDelegation(ctx, addrDels[1], valAddrs[0])
+	require.NoError(err)
+
+	require.Equal(math.LegacyNewDec(21), resBond.Shares)
+
+	// full transfer
+	transferred, err = keeper.TransferDelegation(ctx, addrDels[0], addrDels[1], valAddrs[0], math.LegacyNewDec(9999))
+	require.NoError(err)
+	require.Equal(transferred, math.LegacyNewDec(78))
+	resBond, err = keeper.GetDelegation(ctx, addrDels[0], valAddrs[0])
+	require.Error(err)
+	resBond, err = keeper.GetDelegation(ctx, addrDels[1], valAddrs[0])
+	require.NoError(err)
+	require.Equal(math.LegacyNewDec(99), resBond.Shares)
+
+	// simulate redelegate to another validator
+	bond1to2 := types.NewDelegation(addrDels[0].String(), valAddrs[1].String(), math.LegacyNewDec(20))
+	err = keeper.SetDelegation(ctx, bond1to2)
+	require.NoError(err)
+	rd := types.NewRedelegation(addrDels[0], valAddrs[0], valAddrs[1], 0, time.Unix(0, 0).UTC(), math.NewInt(20), math.LegacyNewDec(20), 0,
+		address.NewBech32Codec("cosmosvaloper"),
+		address.NewBech32Codec("cosmos"),
+	)
+	err = keeper.SetRedelegation(ctx, rd)
+	require.NoError(err)
+
+	// partial transfer from redelegation
+	transferred, err = keeper.TransferDelegation(ctx, addrDels[0], addrDels[1], valAddrs[1], math.LegacyNewDec(7))
+	require.NoError(err)
+	require.Equal(math.LegacyNewDec(7), transferred)
+	resBond, err = keeper.GetDelegation(ctx, addrDels[0], valAddrs[1])
+	require.NoError(err)
+	require.Equal(math.LegacyNewDec(13), resBond.Shares)
+	resBond, err = keeper.GetDelegation(ctx, addrDels[1], valAddrs[1])
+	require.NoError(err)
+	require.Equal(math.LegacyNewDec(7), resBond.Shares)
+
+	// stake more alongside redelegation
+	bond1to2, err = keeper.GetDelegation(ctx, addrDels[0], valAddrs[1])
+	require.NoError(err)
+	require.Equal(math.LegacyNewDec(13), bond1to2.Shares)
+	bond1to2.Shares = math.LegacyNewDec(47) // add 34 shares
+	keeper.SetDelegation(ctx, bond1to2)
+
+	// full transfer from partial redelegation
+	transferred, err = keeper.TransferDelegation(ctx, addrDels[0], addrDels[1], valAddrs[1], math.LegacyNewDec(9999))
+	require.NoError(err)
+	require.Equal(math.LegacyNewDec(47), transferred)
+	resBond, err = keeper.GetDelegation(ctx, addrDels[0], valAddrs[1])
+	require.Error(err)
+	resBond, err = keeper.GetDelegation(ctx, addrDels[1], valAddrs[1])
+	require.NoError(err)
+	require.Equal(math.LegacyNewDec(54), resBond.Shares)
+}
+
 // tests Get/Set/Remove UnbondingDelegation
 func (s *KeeperTestSuite) TestUnbondingDelegation() {
 	ctx, keeper := s.ctx, s.stakingKeeper
@@ -295,6 +404,86 @@ func (s *KeeperTestSuite) TestUnbondingDelegation() {
 	resUnbonds, err = keeper.GetAllUnbondingDelegations(ctx, delAddrs[0])
 	require.NoError(err)
 	require.Equal(0, len(resUnbonds))
+}
+
+func (s *KeeperTestSuite) TestTransferUnbonding() {
+	ctx, keeper := s.ctx, s.stakingKeeper
+	require := s.Require()
+	delAddrs, valAddrs := createValAddrs(2)
+
+	s.accountKeeper.EXPECT().AddressCodec().Return(address.NewBech32Codec("cosmos")).AnyTimes()
+
+	//delAddrs := simapp.AddTestAddrsIncremental(app, ctx, 2, sdk.NewInt(10000))
+	//valAddrs := simapp.ConvertAddrsToValAddrs(delAddrs)
+
+	// try to transfer when there's nothing
+	transferred, err := keeper.TransferUnbonding(ctx, delAddrs[0], delAddrs[1], valAddrs[0], math.NewInt(30))
+	require.NoError(err)
+	require.Equal(math.ZeroInt(), transferred)
+	_, err = keeper.GetUnbondingDelegation(ctx, delAddrs[1], valAddrs[0])
+	require.Error(err)
+
+	// set an UnbondingDelegation with one entry
+
+	ubd := types.NewUnbondingDelegation(
+		delAddrs[0],
+		valAddrs[0],
+		0,
+		time.Unix(0, 0).UTC(),
+		math.NewInt(5),
+		0,
+		address.NewBech32Codec("cosmosvaloper"),
+		address.NewBech32Codec("cosmos"),
+	)
+
+	err = keeper.SetUnbondingDelegation(ctx, ubd)
+	require.NoError(err)
+
+	// transfer nothing
+	transferred, err = keeper.TransferUnbonding(ctx, delAddrs[0], delAddrs[1], valAddrs[0], math.ZeroInt())
+	require.NoError(err)
+	require.Equal(math.ZeroInt(), transferred)
+
+	// partial transfer
+	transferred, err = keeper.TransferUnbonding(ctx, delAddrs[0], delAddrs[1], valAddrs[0], math.NewInt(3))
+	require.NoError(err)
+	require.Equal(math.NewInt(3), transferred)
+	ubd.Entries[0].Balance = math.NewInt(2)
+	resUnbond, err := keeper.GetUnbondingDelegation(ctx, delAddrs[0], valAddrs[0])
+	require.NoError(err)
+	require.Equal(ubd, resUnbond)
+	resUnbond, err = keeper.GetUnbondingDelegation(ctx, delAddrs[1], valAddrs[0])
+	require.NoError(err)
+	wantDestUnbond := types.NewUnbondingDelegation(
+		delAddrs[1],
+		valAddrs[0],
+		0,
+		time.Unix(0, 0).UTC(),
+		math.NewInt(3),
+		0,
+		address.NewBech32Codec("cosmosvaloper"),
+		address.NewBech32Codec("cosmos"),
+	)
+	require.Equal(wantDestUnbond, resUnbond)
+
+	// add another entry
+	completionTime := time.Unix(3600, 0).UTC()
+	ubdTo, err := keeper.SetUnbondingDelegationEntry(ctx, delAddrs[0], valAddrs[0], 1, completionTime, math.NewInt(57))
+	require.NoError(err)
+	err = keeper.InsertUBDQueue(ctx, ubdTo, completionTime)
+	require.NoError(err)
+
+	// full transfer
+	transferred, err = keeper.TransferUnbonding(ctx, delAddrs[0], delAddrs[1], valAddrs[0], math.NewInt(999))
+	require.Equal(math.NewInt(59), transferred)
+	_, err = keeper.GetUnbondingDelegation(ctx, delAddrs[0], valAddrs[0])
+	require.NoError(err)
+	resUnbond, err = keeper.GetUnbondingDelegation(ctx, delAddrs[1], valAddrs[0])
+	require.NoError(err)
+	require.Equal(3, len(resUnbond.Entries))
+	require.Equal(math.NewInt(3), resUnbond.Entries[0].Balance)
+	require.Equal(math.NewInt(2), resUnbond.Entries[1].Balance)
+	require.Equal(math.NewInt(57), resUnbond.Entries[2].Balance)
 }
 
 func (s *KeeperTestSuite) TestUnbondingDelegationsFromValidator() {
@@ -478,6 +667,7 @@ func (s *KeeperTestSuite) TestUndelegateFromUnbondingValidator() {
 	require.NoError(keeper.SetDelegation(ctx, delegation))
 
 	header := ctx.BlockHeader()
+
 	blockHeight := int64(10)
 	header.Height = blockHeight
 	blockTime := time.Unix(333, 0)
@@ -558,9 +748,9 @@ func (s *KeeperTestSuite) TestUndelegateFromUnbondedValidator() {
 
 	// unbond the all self-delegation to put validator in unbonding state
 	s.bankKeeper.EXPECT().SendCoinsFromModuleToModule(gomock.Any(), stakingtypes.BondedPoolName, stakingtypes.NotBondedPoolName, gomock.Any())
-	_, amount, err := keeper.Undelegate(ctx, val0AccAddr, addrVals[0], math.LegacyNewDecFromInt(valTokens))
+	_, amount, err := keeper.Undelegate(ctx, val0AccAddr, addrVals[0], math.LegacyNewDecFromInt(delTokens))
 	require.NoError(err)
-	require.Equal(amount, valTokens)
+	require.Equal(amount, delTokens)
 
 	// end block
 	s.bankKeeper.EXPECT().SendCoinsFromModuleToModule(gomock.Any(), stakingtypes.BondedPoolName, stakingtypes.NotBondedPoolName, gomock.Any())
@@ -1048,7 +1238,7 @@ func (s *KeeperTestSuite) TestRedelegateFromUnbondedValidator() {
 	_, err = keeper.BeginRedelegation(ctx, addrDels[1], addrVals[0], addrVals[1], math.LegacyNewDecFromInt(redelegationTokens))
 	require.NoError(err)
 
-	// no red should have been found
+	// no red should have been err
 	red, err := keeper.GetRedelegation(ctx, addrDels[0], addrVals[0], addrVals[1])
 	require.ErrorIs(err, stakingtypes.ErrNoRedelegation, "%v", red)
 }

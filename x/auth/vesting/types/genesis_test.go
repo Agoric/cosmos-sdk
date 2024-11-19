@@ -41,4 +41,20 @@ func TestValidateGenesisInvalidAccounts(t *testing.T) {
 	// invalid start time
 	genAccs[0] = NewContinuousVestingAccountRaw(baseVestingAcc, 1548888000)
 	require.Error(t, authtypes.ValidateGenAccounts(genAccs))
+
+	// invalid period: duration
+	genAccs[0] = NewPeriodicVestingAccountRaw(baseVestingAcc, endTime-100000, []Period{
+		{Length: 100000 + 20, Amount: acc1Balance},
+	})
+	require.Error(t, authtypes.ValidateGenAccounts(genAccs))
+	// invalid period: amount
+	genAccs[0] = NewPeriodicVestingAccountRaw(baseVestingAcc, endTime-100000, []Period{
+		{Length: 100000, Amount: acc1Balance.Add(acc1Balance...)},
+	})
+	require.Error(t, authtypes.ValidateGenAccounts(genAccs))
+	// Passing case
+	genAccs[0] = NewPeriodicVestingAccountRaw(baseVestingAcc, endTime-100000, []Period{
+		{Length: 100000, Amount: acc1Balance},
+	})
+	require.NoError(t, authtypes.ValidateGenAccounts(genAccs))
 }

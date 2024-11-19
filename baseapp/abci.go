@@ -146,6 +146,16 @@ func (app *BaseApp) Info(_ *abci.RequestInfo) (*abci.ResponseInfo, error) {
 	}, nil
 }
 
+// Snapshot takes a snapshot of the current state and prunes any old snapshottypes.
+// It should be started as a goroutine
+func (app *BaseApp) Snapshot(height int64) {
+	if app.snapshotManager == nil {
+		app.logger.Info("snapshot manager not configured")
+		return
+	}
+	app.snapshotManager.Snapshot(height)
+}
+
 // Query implements the ABCI interface. It delegates to CommitMultiStore if it
 // implements Queryable.
 func (app *BaseApp) Query(_ context.Context, req *abci.RequestQuery) (resp *abci.ResponseQuery, err error) {
@@ -159,8 +169,27 @@ func (app *BaseApp) Query(_ context.Context, req *abci.RequestQuery) (resp *abci
 	}()
 
 	// when a client did not provide a query height, manually inject the latest
+	lastHeight := app.LastBlockHeight()
 	if req.Height == 0 {
-		req.Height = app.LastBlockHeight()
+		req.Height = lastHeight
+	}
+	if req.Height > lastHeight {
+		return sdkerrors.QueryResult(
+			sdkerrors.Wrapf(
+				sdkerrors.ErrInvalidHeight,
+				"given height %d is greater than latest height %d",
+				req.Height, lastHeight,
+			),
+			app.trace,
+		)
+	}
+
+	telemetry.IncrCounter(1, "query", "count")
+	telemetry.IncrCounter(1, "query", req.Path)
+	defer telemetry.MeasureSince(time.Now(), req.Path)
+
+	if req.Path == "/cosmos.tx.v1beta1.Service/BroadcastTx" {
+		return sdkerrors.QueryResult(sdkerrors.Wrap(sdkerrors.ErrInvalidRequest, "can't route a broadcast tx message"), app.trace)
 	}
 
 	telemetry.IncrCounter(1, "query", "count")
@@ -1017,6 +1046,22 @@ func handleQueryApp(app *BaseApp, path []string, req *abci.RequestQuery) *abci.R
 				Codespace: sdkerrors.RootCodespace,
 				Height:    req.Height,
 				Value:     []byte(app.version),
+			}
+
+		case "snapshots":
+			var responseValue []byte
+
+			response := app.ListSnapshots(abci.RequestListSnapshots{})
+
+			responseValue, err := json.Marshal(response)
+			if err != nil {
+				return sdkerrors.QueryResult(sdkerrors.Wrap(err, fmt.Sprintf("failed to marshal list snapshots response %v", response)), app.trace)
+			}
+
+			return abci.ResponseQuery{
+				Codespace: sdkerrors.RootCodespace,
+				Height:    req.Height,
+				Value:     responseValue,
 			}
 
 		default:

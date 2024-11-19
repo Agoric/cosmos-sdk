@@ -13,8 +13,17 @@ import (
 	sdkerrors "github.com/cosmos/cosmos-sdk/types/errors"
 )
 
+// [AGORIC] Valid values for FlagAbciClientType
+const (
+	AbciClientTypeCommitting = "committing"
+	AbciClientTypeLocal      = "local"
+)
+
 const (
 	defaultMinGasPrices = ""
+
+	// DefaultABCIClientType defines the default ABCI client type to use with cometbft.
+	DefaultABCIClientType = AbciClientTypeCommitting // [AGORIC]
 
 	// DefaultAPIAddress defines the default address to bind the API server to.
 	DefaultAPIAddress = "tcp://localhost:1317"
@@ -29,6 +38,9 @@ const (
 	// DefaultGRPCMaxSendMsgSize defines the default gRPC max message size in
 	// bytes the server can send.
 	DefaultGRPCMaxSendMsgSize = math.MaxInt32
+
+	// FileStreamer defines the store streaming type for file streaming.
+	FileStreamer = "file"
 )
 
 // BaseConfig defines the server's basic configuration
@@ -87,6 +99,12 @@ type BaseConfig struct {
 
 	// IAVLDisableFastNode enables or disables the fast sync node.
 	IAVLDisableFastNode bool `mapstructure:"iavl-disable-fastnode"`
+
+	// ABCIClientType selects the type of ABCI client.
+	// Valid settings are "committing" (default) or "local".
+	// The committing client allows greater query parallelism,
+	// but the local client is more defensive.
+	ABCIClientType string `mapstructure:"abci-client-type"`
 
 	// AppDBBackend defines the type of Database to use for the application and snapshots databases.
 	// An empty string indicates that the CometBFT config's DBBackend value should be used.
@@ -222,6 +240,7 @@ func DefaultConfig() *Config {
 			IndexEvents:         make([]string, 0),
 			IAVLCacheSize:       781250,
 			IAVLDisableFastNode: false,
+			ABCIClientType:      DefaultABCIClientType, // [AGORIC]
 			AppDBBackend:        "",
 		},
 		Telemetry: telemetry.Config{

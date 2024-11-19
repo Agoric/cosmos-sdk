@@ -5,11 +5,13 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	stdmath "math"
 	"time"
 
 	corestore "cosmossdk.io/core/store"
 	errorsmod "cosmossdk.io/errors"
 	"cosmossdk.io/math"
+
 	storetypes "cosmossdk.io/store/types"
 
 	sdk "github.com/cosmos/cosmos-sdk/types"
@@ -969,6 +971,202 @@ func (k Keeper) Delegate(
 	return newShares, nil
 }
 
+// TransferDelegation changes the ownership of at most the desired number of shares.
+// Returns the actual number of shares transferred. Will also transfer redelegation
+// entries to ensure that all redelegations are matched by sufficient shares.
+// Note that no tokens are transferred to or from any pool or account, since no
+// delegation is actually changing state.
+func (k Keeper) TransferDelegation(ctx context.Context, fromAddr, toAddr sdk.AccAddress, valAddr sdk.ValAddress, wantShares math.LegacyDec) (math.LegacyDec, error) {
+	transferred := math.LegacyZeroDec()
+
+	// sanity checks
+	if !wantShares.IsPositive() {
+		return transferred, errors.New("wantShares needs to be positive")
+	}
+	validator, err := k.GetValidator(ctx, valAddr)
+	if err != nil {
+		return transferred, err
+	}
+	delFrom, err := k.GetDelegation(ctx, fromAddr, valAddr)
+	if err != nil {
+		return transferred, err
+	}
+
+	valAddrString, err := k.validatorAddressCodec.BytesToString(valAddr)
+	if err != nil {
+		return transferred, err
+	}
+
+	maxEntries, err := k.MaxEntries(ctx)
+	if err != nil {
+		return transferred, err
+	}
+
+	operatorAddress, err := k.validatorAddressCodec.StringToBytes(validator.GetOperator())
+	if err != nil {
+		return transferred, err
+	}
+
+	toAddrString, err := k.validatorAddressCodec.BytesToString(toAddr)
+	if err != nil {
+		return transferred, err
+	}
+
+	// Check redelegation entry limits while we can still return early.
+	// Assume the worst case that we need to transfer all redelegation entries
+	mightExceedLimit := false
+	k.IterateDelegatorRedelegations(ctx, fromAddr, func(toRedelegation types.Redelegation) (stop bool) {
+		// There's no redelegation index by delegator and dstVal or vice-versa.
+		// The minimum cardinality is to look up by delegator, so scan and skip.
+		if toRedelegation.ValidatorDstAddress != valAddrString {
+			return false
+		}
+		fromRedelegation, err := k.GetRedelegation(ctx, fromAddr, sdk.ValAddress(toRedelegation.ValidatorSrcAddress), sdk.ValAddress(toRedelegation.ValidatorDstAddress))
+		if err != nil && len(toRedelegation.Entries)+len(fromRedelegation.Entries) >= int(maxEntries) {
+			mightExceedLimit = true
+			return true
+		}
+		return false
+	})
+	if mightExceedLimit {
+		// avoid types.ErrMaxRedelegationEntries
+		return transferred, nil
+	}
+
+	// compute shares to transfer, amount left behind
+	transferred = delFrom.Shares
+	if transferred.GT(wantShares) {
+		transferred = wantShares
+	}
+	remaining := delFrom.Shares.Sub(transferred)
+
+	// Update or create the delTo object, calling appropriate hooks
+	delTo, err := k.GetDelegation(ctx, toAddr, operatorAddress)
+	if err != nil {
+		delTo = types.NewDelegation(toAddrString, validator.GetOperator(), math.LegacyZeroDec())
+	}
+	if err == nil {
+		k.Hooks().BeforeDelegationSharesModified(ctx, toAddr, operatorAddress)
+	} else {
+		k.Hooks().BeforeDelegationCreated(ctx, toAddr, operatorAddress)
+	}
+	delTo.Shares = delTo.Shares.Add(transferred)
+	k.SetDelegation(ctx, delTo)
+	k.Hooks().AfterDelegationModified(ctx, toAddr, valAddr)
+
+	// Update source delegation
+	if remaining.IsZero() {
+		k.Hooks().BeforeDelegationRemoved(ctx, fromAddr, valAddr)
+		k.RemoveDelegation(ctx, delFrom)
+	} else {
+		k.Hooks().BeforeDelegationSharesModified(ctx, fromAddr, valAddr)
+		delFrom.Shares = remaining
+		k.SetDelegation(ctx, delFrom)
+		k.Hooks().AfterDelegationModified(ctx, fromAddr, valAddr)
+	}
+
+	// If there are not enough remaining shares to be responsible for
+	// the redelegations, transfer some redelegations.
+	// For instance, if the original delegation of 300 shares to validator A
+	// had redelegations for 100 shares each from validators B, C, and D,
+	// and if we're transferring 175 shares, then we might keep the redelegation
+	// from B, transfer the one from D, and split the redelegation from C
+	// keeping a liability for 25 shares and transferring one for 75 shares.
+	// Of course, the redelegations themselves can have multiple entries for
+	// different timestamps, so we're actually working at a finer granularity.
+	var redelegationErrors []error
+	redelegations, err := k.GetRedelegations(ctx, fromAddr, stdmath.MaxUint16)
+	if err != nil {
+		redelegationErrors = append(redelegationErrors, err)
+	}
+	for _, redelegation := range redelegations {
+		// There's no redelegation index by delegator and dstVal or vice-versa.
+		// The minimum cardinality is to look up by delegator, so scan and skip.
+		if redelegation.ValidatorDstAddress != valAddrString {
+			continue
+		}
+		redelegationModified := false
+		entriesRemaining := false
+		for i := 0; i < len(redelegation.Entries); i++ {
+			entry := redelegation.Entries[i]
+
+			// Partition SharesDst between keeping and sending
+			sharesToKeep := entry.SharesDst
+			sharesToSend := math.LegacyZeroDec()
+			if entry.SharesDst.GT(remaining) {
+				sharesToKeep = remaining
+				sharesToSend = entry.SharesDst.Sub(sharesToKeep)
+			}
+			remaining = remaining.Sub(sharesToKeep) // fewer local shares available to cover liability
+
+			if sharesToSend.IsZero() {
+				// Leave the entry here
+				entriesRemaining = true
+				continue
+			}
+			if sharesToKeep.IsZero() {
+				// Transfer the whole entry, delete locally
+				toRed, err := k.SetRedelegationEntry(
+					ctx, toAddr, sdk.ValAddress(redelegation.ValidatorSrcAddress),
+					sdk.ValAddress(redelegation.ValidatorDstAddress),
+					entry.CreationHeight, entry.CompletionTime, entry.InitialBalance, math.LegacyZeroDec(), sharesToSend,
+				)
+				if err != nil {
+					redelegationErrors = append(redelegationErrors, err)
+					continue
+				}
+
+				k.InsertRedelegationQueue(ctx, toRed, entry.CompletionTime)
+				redelegation.RemoveEntry(int64(i))
+				i--
+				// okay to leave an obsolete entry in the queue for the removed entry
+				redelegationModified = true
+			} else {
+				// Proportionally divide the entry
+				fracSending := sharesToSend.Quo(entry.SharesDst)
+				balanceToSend := fracSending.MulInt(entry.InitialBalance).TruncateInt()
+				balanceToKeep := entry.InitialBalance.Sub(balanceToSend)
+				toRed, err := k.SetRedelegationEntry(
+					ctx, toAddr, sdk.ValAddress(redelegation.ValidatorSrcAddress),
+					sdk.ValAddress(redelegation.ValidatorDstAddress),
+					entry.CreationHeight, entry.CompletionTime, balanceToSend, math.LegacyZeroDec(), sharesToSend,
+				)
+				if err != nil {
+					redelegationErrors = append(redelegationErrors, err)
+					continue
+				}
+				k.InsertRedelegationQueue(ctx, toRed, entry.CompletionTime)
+				entry.InitialBalance = balanceToKeep
+				entry.SharesDst = sharesToKeep
+				redelegation.Entries[i] = entry
+				// not modifying the completion time, so no need to change the queue
+				redelegationModified = true
+				entriesRemaining = true
+			}
+		}
+		if redelegationModified {
+			if entriesRemaining {
+				err = k.SetRedelegation(ctx, redelegation)
+				if err != nil {
+					redelegationErrors = append(redelegationErrors, err)
+					continue
+				}
+			} else {
+				err = k.RemoveRedelegation(ctx, redelegation)
+				if err != nil {
+					redelegationErrors = append(redelegationErrors, err)
+					continue
+				}
+			}
+		}
+	}
+
+	if len(redelegationErrors) > 0 {
+		return transferred, redelegationErrors[0]
+	}
+	return transferred, nil
+}
+
 // Unbond unbonds a particular delegation and perform associated store operations.
 func (k Keeper) Unbond(
 	ctx context.Context, delAddr sdk.AccAddress, valAddr sdk.ValAddress, shares math.LegacyDec,
@@ -1080,7 +1278,7 @@ func (k Keeper) getBeginInfo(
 	switch {
 	case errors.Is(err, types.ErrNoValidatorFound) || validator.IsBonded():
 		// the longest wait - just unbonding period from now
-		completionTime = sdkCtx.BlockHeader().Time.Add(unbondingTime)
+		completionTime = sdkCtx.HeaderInfo().Time.Add(unbondingTime)
 		height = sdkCtx.BlockHeight()
 
 		return completionTime, height, false, nil
@@ -1137,7 +1335,7 @@ func (k Keeper) Undelegate(
 	}
 
 	sdkCtx := sdk.UnwrapSDKContext(ctx)
-	completionTime := sdkCtx.BlockHeader().Time.Add(unbondingTime)
+	completionTime := sdkCtx.HeaderInfo().Time.Add(unbondingTime)
 	ubd, err := k.SetUnbondingDelegationEntry(ctx, delAddr, valAddr, sdkCtx.BlockHeight(), completionTime, returnAmount)
 	if err != nil {
 		return time.Time{}, math.Int{}, err
@@ -1149,6 +1347,76 @@ func (k Keeper) Undelegate(
 	}
 
 	return completionTime, returnAmount, nil
+}
+
+// TransferUnbonding changes the ownership of UnbondingDelegation entries
+// until the desired number of tokens have changed hands. Returns the actual
+// number of tokens transferred.
+func (k Keeper) TransferUnbonding(ctx context.Context, fromAddr, toAddr sdk.AccAddress, valAddr sdk.ValAddress, wantAmt math.Int) (transferred math.Int, err error) {
+	transferred = math.ZeroInt()
+	ubdFrom, err := k.GetUnbondingDelegation(ctx, fromAddr, valAddr)
+	if err != nil {
+		return transferred, err
+	}
+	ubdFromModified := false
+
+	sdkCtx := sdk.UnwrapSDKContext(ctx)
+
+	for i := 0; i < len(ubdFrom.Entries) && wantAmt.IsPositive(); i++ {
+		// start a cache in case of failure
+		cacheCtx, writeCache := sdkCtx.CacheContext()
+		entry := ubdFrom.Entries[i]
+		toXfer := entry.Balance
+		if toXfer.GT(wantAmt) {
+			toXfer = wantAmt
+		}
+		if !toXfer.IsPositive() {
+			continue
+		}
+
+		hasMaxUnbondingDelegationEntries, err := k.HasMaxUnbondingDelegationEntries(cacheCtx, toAddr, valAddr)
+		if err != nil {
+			continue
+		}
+		if hasMaxUnbondingDelegationEntries {
+			// TODO pre-compute the maximum entries we can add rather than checking each time
+			break
+		}
+
+		ubdTo, err := k.SetUnbondingDelegationEntry(cacheCtx, toAddr, valAddr, entry.CreationHeight, entry.CompletionTime, toXfer)
+		if err != nil {
+			continue
+		}
+		err = k.InsertUBDQueue(cacheCtx, ubdTo, entry.CompletionTime)
+		if err != nil {
+			continue
+		}
+
+		transferred = transferred.Add(toXfer)
+		// commit cache state transition
+		writeCache()
+		wantAmt = wantAmt.Sub(toXfer)
+
+		ubdFromModified = true
+		remaining := entry.Balance.Sub(toXfer)
+		if remaining.IsZero() {
+			ubdFrom.RemoveEntry(int64(i))
+			i--
+			continue
+		}
+		entry.Balance = remaining
+		ubdFrom.Entries[i] = entry
+	}
+
+	if ubdFromModified {
+		if len(ubdFrom.Entries) == 0 {
+			err = k.RemoveUnbondingDelegation(sdkCtx, ubdFrom)
+		} else {
+			err = k.SetUnbondingDelegation(sdkCtx, ubdFrom)
+
+		}
+	}
+	return transferred, nil
 }
 
 // CompleteUnbonding completes the unbonding of all mature entries in the
@@ -1167,7 +1435,7 @@ func (k Keeper) CompleteUnbonding(ctx context.Context, delAddr sdk.AccAddress, v
 
 	balances := sdk.NewCoins()
 	sdkCtx := sdk.UnwrapSDKContext(ctx)
-	ctxTime := sdkCtx.BlockHeader().Time
+	ctxTime := sdkCtx.HeaderInfo().Time
 
 	delegatorAddress, err := k.authKeeper.AddressCodec().StringToBytes(ubd.DelegatorAddress)
 	if err != nil {
@@ -1312,7 +1580,7 @@ func (k Keeper) CompleteRedelegation(
 
 	balances := sdk.NewCoins()
 	sdkCtx := sdk.UnwrapSDKContext(ctx)
-	ctxTime := sdkCtx.BlockHeader().Time
+	ctxTime := sdkCtx.HeaderInfo().Time
 
 	// loop through all the entries and complete mature redelegation entries
 	for i := 0; i < len(red.Entries); i++ {

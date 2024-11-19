@@ -86,6 +86,46 @@ func parseSubmitLegacyProposal(fs *pflag.FlagSet) (*legacyProposal, error) {
 	return proposal, nil
 }
 
+func parseSubmitLegacyProposalFlags(fs *pflag.FlagSet) (*legacyProposal, error) {
+	proposal := &legacyProposal{}
+	proposalFile, _ := fs.GetString(FlagProposal)
+
+	if proposalFile == "" {
+		proposalType, _ := fs.GetString(FlagProposalType)
+		proposal.Title, _ = fs.GetString(FlagTitle)
+		proposal.Description, _ = fs.GetString(FlagDescription)
+		proposal.Type = govutils.NormalizeProposalType(proposalType)
+		proposal.Deposit, _ = fs.GetString(FlagDeposit)
+		if err := proposal.validate(); err != nil {
+			return nil, err
+		}
+
+		return proposal, nil
+	}
+
+	for _, flag := range ProposalFlags {
+		if v, _ := fs.GetString(flag); v != "" {
+			return nil, fmt.Errorf("--%s flag provided alongside --proposal, which is a noop", flag)
+		}
+	}
+
+	contents, err := os.ReadFile(proposalFile)
+	if err != nil {
+		return nil, err
+	}
+
+	err = json.Unmarshal(contents, proposal)
+	if err != nil {
+		return nil, err
+	}
+
+	if err := proposal.validate(); err != nil {
+		return nil, err
+	}
+
+	return proposal, nil
+}
+
 // proposal defines the new Msg-based proposal.
 type proposal struct {
 	// Msgs defines an array of sdk.Msgs proto-JSON-encoded as Anys.

@@ -15,6 +15,11 @@ import (
 
 // get the delegator withdraw address, defaulting to the delegator address
 func (k Keeper) GetDelegatorWithdrawAddr(ctx context.Context, delAddr sdk.AccAddress) (sdk.AccAddress, error) {
+	for _, h := range k.hooks {
+		if !h.AllowWithdrawAddr(ctx, delAddr) {
+			return delAddr
+		}
+	}
 	store := k.storeService.OpenKVStore(ctx)
 	b, err := store.Get(types.GetDelegatorWithdrawAddrKey(delAddr))
 	if b == nil {
