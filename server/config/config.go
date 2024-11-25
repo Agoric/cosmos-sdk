@@ -22,9 +22,6 @@ const (
 const (
 	defaultMinGasPrices = ""
 
-	// DefaultABCIClientType defines the default ABCI client type to use with cometbft.
-	DefaultABCIClientType = AbciClientTypeCommitting // [AGORIC]
-
 	// DefaultAPIAddress defines the default address to bind the API server to.
 	DefaultAPIAddress = "tcp://localhost:1317"
 
@@ -39,8 +36,8 @@ const (
 	// bytes the server can send.
 	DefaultGRPCMaxSendMsgSize = math.MaxInt32
 
-	// FileStreamer defines the store streaming type for file streaming.
-	FileStreamer = "file"
+	// DefaultABCIClientType defines the default ABCI client type to use with cometbft.
+	DefaultABCIClientType = AbciClientTypeCommitting // [AGORIC]
 )
 
 // BaseConfig defines the server's basic configuration
@@ -81,7 +78,7 @@ type BaseConfig struct {
 	// It has no bearing on application state pruning which is determined by the
 	// "pruning-*" configurations.
 	//
-	// Note: CometBFT block pruning is dependent on this parameter in conjunction
+	// Note: CometBFT block pruning is dependant on this parameter in conjunction
 	// with the unbonding (safety threshold) period, state pruning and state sync
 	// snapshot parameters to determine the correct minimum value of
 	// ResponseCommit.RetainHeight.
@@ -100,15 +97,15 @@ type BaseConfig struct {
 	// IAVLDisableFastNode enables or disables the fast sync node.
 	IAVLDisableFastNode bool `mapstructure:"iavl-disable-fastnode"`
 
+	// AppDBBackend defines the type of Database to use for the application and snapshots databases.
+	// An empty string indicates that the CometBFT config's DBBackend value should be used.
+	AppDBBackend string `mapstructure:"app-db-backend"`
+
 	// ABCIClientType selects the type of ABCI client.
 	// Valid settings are "committing" (default) or "local".
 	// The committing client allows greater query parallelism,
 	// but the local client is more defensive.
 	ABCIClientType string `mapstructure:"abci-client-type"`
-
-	// AppDBBackend defines the type of Database to use for the application and snapshots databases.
-	// An empty string indicates that the CometBFT config's DBBackend value should be used.
-	AppDBBackend string `mapstructure:"app-db-backend"`
 }
 
 // APIConfig defines the API listener configuration.
@@ -159,6 +156,12 @@ type GRPCConfig struct {
 	MaxSendMsgSize int `mapstructure:"max-send-msg-size"`
 }
 
+// GRPCWebConfig defines configuration for the gRPC-web server.
+type GRPCWebConfig struct {
+	// Enable defines if the gRPC-web should be enabled.
+	Enable bool `mapstructure:"enable"`
+}
+
 // StateSyncConfig defines the state sync snapshot configuration.
 type StateSyncConfig struct {
 	// SnapshotInterval sets the interval at which state sync snapshots are taken.
@@ -202,6 +205,7 @@ type Config struct {
 	Telemetry telemetry.Config `mapstructure:"telemetry"`
 	API       APIConfig        `mapstructure:"api"`
 	GRPC      GRPCConfig       `mapstructure:"grpc"`
+	GRPCWeb   GRPCWebConfig    `mapstructure:"grpc-web"`
 	StateSync StateSyncConfig  `mapstructure:"state-sync"`
 	Streaming StreamingConfig  `mapstructure:"streaming"`
 	Mempool   MempoolConfig    `mapstructure:"mempool"`
@@ -240,7 +244,6 @@ func DefaultConfig() *Config {
 			IndexEvents:         make([]string, 0),
 			IAVLCacheSize:       781250,
 			IAVLDisableFastNode: false,
-			ABCIClientType:      DefaultABCIClientType, // [AGORIC]
 			AppDBBackend:        "",
 		},
 		Telemetry: telemetry.Config{
@@ -260,6 +263,9 @@ func DefaultConfig() *Config {
 			Address:        DefaultGRPCAddress,
 			MaxRecvMsgSize: DefaultGRPCMaxRecvMsgSize,
 			MaxSendMsgSize: DefaultGRPCMaxSendMsgSize,
+		},
+		GRPCWeb: GRPCWebConfig{
+			Enable: true,
 		},
 		StateSync: StateSyncConfig{
 			SnapshotInterval:   0,
