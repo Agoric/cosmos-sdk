@@ -11,108 +11,70 @@ import (
 func (k Keeper) InitGenesis(ctx sdk.Context, data types.GenesisState) {
 	var moduleHoldings sdk.DecCoins
 
-	err := k.FeePool.Set(ctx, data.FeePool)
-	if err != nil {
-		panic(err)
-	}
-
-	if err := k.Params.Set(ctx, data.Params); err != nil {
-		panic(err)
-	}
+	k.SetFeePool(ctx, data.FeePool)
+	k.SetParams(ctx, data.Params)
 
 	for _, dwi := range data.DelegatorWithdrawInfos {
-		delegatorAddress, err := k.authKeeper.AddressCodec().StringToBytes(dwi.DelegatorAddress)
-		if err != nil {
-			panic(err)
-		}
-		withdrawAddress, err := k.authKeeper.AddressCodec().StringToBytes(dwi.WithdrawAddress)
-		if err != nil {
-			panic(err)
-		}
-		err = k.SetDelegatorWithdrawAddr(ctx, delegatorAddress, withdrawAddress)
-		if err != nil {
-			panic(err)
-		}
+		delegatorAddress := sdk.MustAccAddressFromBech32(dwi.DelegatorAddress)
+		withdrawAddress := sdk.MustAccAddressFromBech32(dwi.WithdrawAddress)
+		k.SetDelegatorWithdrawAddr(ctx, delegatorAddress, withdrawAddress)
 	}
 
 	var previousProposer sdk.ConsAddress
 	if data.PreviousProposer != "" {
 		var err error
-		previousProposer, err = k.stakingKeeper.ConsensusAddressCodec().StringToBytes(data.PreviousProposer)
+		previousProposer, err = sdk.ConsAddressFromBech32(data.PreviousProposer)
 		if err != nil {
 			panic(err)
 		}
 	}
 
-	if err = k.SetPreviousProposerConsAddr(ctx, previousProposer); err != nil {
-		panic(err)
-	}
+	k.SetPreviousProposerConsAddr(ctx, previousProposer)
 
 	for _, rew := range data.OutstandingRewards {
-		valAddr, err := k.stakingKeeper.ValidatorAddressCodec().StringToBytes(rew.ValidatorAddress)
+		valAddr, err := sdk.ValAddressFromBech32(rew.ValidatorAddress)
 		if err != nil {
 			panic(err)
 		}
-		err = k.SetValidatorOutstandingRewards(ctx, valAddr, types.ValidatorOutstandingRewards{Rewards: rew.OutstandingRewards})
-		if err != nil {
-			panic(err)
-		}
+		k.SetValidatorOutstandingRewards(ctx, valAddr, types.ValidatorOutstandingRewards{Rewards: rew.OutstandingRewards})
 		moduleHoldings = moduleHoldings.Add(rew.OutstandingRewards...)
 	}
 	for _, acc := range data.ValidatorAccumulatedCommissions {
-		valAddr, err := k.stakingKeeper.ValidatorAddressCodec().StringToBytes(acc.ValidatorAddress)
+		valAddr, err := sdk.ValAddressFromBech32(acc.ValidatorAddress)
 		if err != nil {
 			panic(err)
 		}
-		err = k.SetValidatorAccumulatedCommission(ctx, valAddr, acc.Accumulated)
-		if err != nil {
-			panic(err)
-		}
+		k.SetValidatorAccumulatedCommission(ctx, valAddr, acc.Accumulated)
 	}
 	for _, his := range data.ValidatorHistoricalRewards {
-		valAddr, err := k.stakingKeeper.ValidatorAddressCodec().StringToBytes(his.ValidatorAddress)
+		valAddr, err := sdk.ValAddressFromBech32(his.ValidatorAddress)
 		if err != nil {
 			panic(err)
 		}
-		err = k.SetValidatorHistoricalRewards(ctx, valAddr, his.Period, his.Rewards)
-		if err != nil {
-			panic(err)
-		}
+		k.SetValidatorHistoricalRewards(ctx, valAddr, his.Period, his.Rewards)
 	}
 	for _, cur := range data.ValidatorCurrentRewards {
-		valAddr, err := k.stakingKeeper.ValidatorAddressCodec().StringToBytes(cur.ValidatorAddress)
+		valAddr, err := sdk.ValAddressFromBech32(cur.ValidatorAddress)
 		if err != nil {
 			panic(err)
 		}
-		err = k.SetValidatorCurrentRewards(ctx, valAddr, cur.Rewards)
-		if err != nil {
-			panic(err)
-		}
+		k.SetValidatorCurrentRewards(ctx, valAddr, cur.Rewards)
 	}
 	for _, del := range data.DelegatorStartingInfos {
-		valAddr, err := k.stakingKeeper.ValidatorAddressCodec().StringToBytes(del.ValidatorAddress)
+		valAddr, err := sdk.ValAddressFromBech32(del.ValidatorAddress)
 		if err != nil {
 			panic(err)
 		}
-		delegatorAddress, err := k.authKeeper.AddressCodec().StringToBytes(del.DelegatorAddress)
-		if err != nil {
-			panic(err)
-		}
+		delegatorAddress := sdk.MustAccAddressFromBech32(del.DelegatorAddress)
 
-		err = k.SetDelegatorStartingInfo(ctx, valAddr, delegatorAddress, del.StartingInfo)
-		if err != nil {
-			panic(err)
-		}
+		k.SetDelegatorStartingInfo(ctx, valAddr, delegatorAddress, del.StartingInfo)
 	}
 	for _, evt := range data.ValidatorSlashEvents {
-		valAddr, err := k.stakingKeeper.ValidatorAddressCodec().StringToBytes(evt.ValidatorAddress)
+		valAddr, err := sdk.ValAddressFromBech32(evt.ValidatorAddress)
 		if err != nil {
 			panic(err)
 		}
-		err = k.SetValidatorSlashEvent(ctx, valAddr, evt.Height, evt.Period, evt.ValidatorSlashEvent)
-		if err != nil {
-			panic(err)
-		}
+		k.SetValidatorSlashEvent(ctx, valAddr, evt.Height, evt.Period, evt.ValidatorSlashEvent)
 	}
 
 	moduleHoldings = moduleHoldings.Add(data.FeePool.CommunityPool...)
@@ -128,25 +90,18 @@ func (k Keeper) InitGenesis(ctx sdk.Context, data types.GenesisState) {
 	if balances.IsZero() {
 		k.authKeeper.SetModuleAccount(ctx, moduleAcc)
 	}
-	if !balances.Equal(moduleHoldingsInt) {
+	if !balances.IsEqual(moduleHoldingsInt) {
 		panic(fmt.Sprintf("distribution module balance does not match the module holdings: %s <-> %s", balances, moduleHoldingsInt))
 	}
 }
 
 // ExportGenesis returns a GenesisState for a given context and keeper.
 func (k Keeper) ExportGenesis(ctx sdk.Context) *types.GenesisState {
-	feePool, err := k.FeePool.Get(ctx)
-	if err != nil {
-		panic(err)
-	}
-
-	params, err := k.Params.Get(ctx)
-	if err != nil {
-		panic(err)
-	}
+	feePool := k.GetFeePool(ctx)
+	params := k.GetParams(ctx)
 
 	dwi := make([]types.DelegatorWithdrawInfo, 0)
-	k.IterateDelegatorWithdrawAddrs(ctx, func(del, addr sdk.AccAddress) (stop bool) {
+	k.IterateDelegatorWithdrawAddrs(ctx, func(del sdk.AccAddress, addr sdk.AccAddress) (stop bool) {
 		dwi = append(dwi, types.DelegatorWithdrawInfo{
 			DelegatorAddress: del.String(),
 			WithdrawAddress:  addr.String(),
@@ -154,11 +109,7 @@ func (k Keeper) ExportGenesis(ctx sdk.Context) *types.GenesisState {
 		return false
 	})
 
-	pp, err := k.GetPreviousProposerConsAddr(ctx)
-	if err != nil {
-		panic(err)
-	}
-
+	pp := k.GetPreviousProposerConsAddr(ctx)
 	outstanding := make([]types.ValidatorOutstandingRewardsRecord, 0)
 
 	k.IterateValidatorOutstandingRewards(ctx,
