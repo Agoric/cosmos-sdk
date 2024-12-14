@@ -10,7 +10,8 @@ BINDIR ?= $(GOPATH)/bin
 BUILDDIR ?= $(CURDIR)/build
 SIMAPP = ./simapp
 MOCKS_DIR = $(CURDIR)/tests/mocks
-HTTPS_GIT := https://github.com/cosmos/cosmos-sdk.git
+PR_TARGET_REPO = https://github.com/agoric-labs/cosmos-sdk.git
+PR_TARGET_BRANCH = Agoric
 DOCKER := $(shell which docker)
 DOCKER_BUF := $(DOCKER) run --rm -v $(CURDIR):/workspace --workdir /workspace bufbuild/buf:1.0.0-rc8
 PROJECT_NAME = $(shell git remote get-url origin | xargs basename -s .git)
@@ -415,9 +416,9 @@ proto-lint:
 	@$(DOCKER_BUF) lint --error-format=json
 
 proto-check-breaking:
-	@$(DOCKER_BUF) breaking --against $(HTTPS_GIT)#branch=main
+	@$(DOCKER_BUF) breaking --against $(PR_TARGET_REPO)#branch=$(PR_TARGET_BRANCH)
 
-TM_URL              = https://raw.githubusercontent.com/cometbft/cometbft/v0.34.28/proto/tendermint
+TM_URL              = https://raw.githubusercontent.com/agoric-labs/cometbft/v0.34.30-alpha.agoric.1/proto/tendermint
 
 TM_CRYPTO_TYPES     = proto/tendermint/crypto
 TM_ABCI_TYPES       = proto/tendermint/abci

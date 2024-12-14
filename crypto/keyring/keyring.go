@@ -719,6 +719,7 @@ func newRealPrompt(dir string, buf io.Reader) func(string) (string, error) {
 				continue
 			}
 
+			// nolint:gosec // ignore gosec G306: Expect WriteFile permissions to be 0600 or less
 			if err := os.WriteFile(dir+"/keyhash", passwordHash, 0o555); err != nil {
 				return "", err
 			}
@@ -855,7 +856,7 @@ func (ks keystore) MigrateAll() ([]*Record, error) {
 
 		rec, err := ks.migrate(key)
 		if err != nil {
-			fmt.Printf("migrate err for key %s: %q\n", key, err)
+			fmt.Fprintf(os.Stderr, "migrate err for key %s: %q\n", key, err)
 			continue
 		}
 
@@ -925,7 +926,7 @@ func (ks keystore) migrate(key string) (*Record, error) {
 		return nil, fmt.Errorf("unable to set keyring.Item, err: %w", err)
 	}
 
-	fmt.Printf("Successfully migrated key %s.\n", key)
+	fmt.Fprintf(os.Stderr, "Successfully migrated key %s.\n", key)
 
 	return k, nil
 }

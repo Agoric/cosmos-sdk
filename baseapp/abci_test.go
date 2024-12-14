@@ -2,6 +2,7 @@ package baseapp
 
 import (
 	"encoding/json"
+	"fmt"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -163,6 +164,26 @@ func TestBaseAppCreateQueryContext(t *testing.T) {
 			} else {
 				require.NoError(t, err)
 			}
+		})
+	}
+}
+
+func TestBaseAppCreateQueryContextRejectsFutureHeights(t *testing.T) {
+	t.Parallel()
+
+	logger := defaultLogger()
+	db := dbm.NewMemDB()
+	name := t.Name()
+	app := NewBaseApp(name, logger, db, nil)
+
+	proves := []bool{
+		false, true,
+	}
+	for _, prove := range proves {
+		t.Run(fmt.Sprintf("prove=%t", prove), func(t *testing.T) {
+			sctx, err := app.createQueryContext(30, true)
+			require.Error(t, err)
+			require.Equal(t, sctx, sdk.Context{})
 		})
 	}
 }

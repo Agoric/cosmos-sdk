@@ -2,6 +2,7 @@ package snapshots_test
 
 import (
 	"errors"
+	"io"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -70,11 +71,15 @@ func TestManager_Take(t *testing.T) {
 		items:         items,
 		prunedHeights: make(map[int64]struct{}),
 	}
-	expectChunks := snapshotItems(items)
+	extSnapshotter := newExtSnapshotter(10)
+
+	expectChunks := snapshotItems(items, extSnapshotter)
 	manager := snapshots.NewManager(store, opts, snapshotter, nil, log.NewNopLogger())
+	err := manager.RegisterExtensions(extSnapshotter)
+	require.NoError(t, err)
 
 	// nil manager should return error
-	_, err := (*snapshots.Manager)(nil).Create(1)
+	_, err = (*snapshots.Manager)(nil).Create(1)
 	require.Error(t, err)
 
 	// creating a snapshot at a lower height than the latest should error
@@ -93,7 +98,7 @@ func TestManager_Take(t *testing.T) {
 		Height: 5,
 		Format: snapshotter.SnapshotFormat(),
 		Chunks: 1,
-		Hash:   []uint8{0x14, 0x38, 0x97, 0x96, 0xba, 0xe4, 0x81, 0xaf, 0x6c, 0xac, 0xff, 0xa5, 0xb8, 0x7e, 0x63, 0x4b, 0xac, 0x69, 0x3f, 0x38, 0x90, 0x5c, 0x7d, 0x57, 0xb3, 0xf, 0x69, 0x73, 0xb3, 0xa0, 0xe0, 0xad},
+		Hash:   []uint8{0xc5, 0xf7, 0xfe, 0xea, 0xd3, 0x4d, 0x3e, 0x87, 0xff, 0x41, 0xa2, 0x27, 0xfa, 0xcb, 0x38, 0x17, 0xa, 0x5, 0xeb, 0x27, 0x4e, 0x16, 0x5e, 0xf3, 0xb2, 0x8b, 0x47, 0xd1, 0xe6, 0x94, 0x7e, 0x8b},
 		Metadata: types.Metadata{
 			ChunkHashes: checksums(expectChunks),
 		},
@@ -135,7 +140,10 @@ func TestManager_Restore(t *testing.T) {
 	target := &mockSnapshotter{
 		prunedHeights: make(map[int64]struct{}),
 	}
+	extSnapshotter := newExtSnapshotter(0)
 	manager := snapshots.NewManager(store, opts, target, nil, log.NewNopLogger())
+	err := manager.RegisterExtensions(extSnapshotter)
+	require.NoError(t, err)
 
 	expectItems := [][]byte{
 		{1, 2, 3},
@@ -143,10 +151,10 @@ func TestManager_Restore(t *testing.T) {
 		{7, 8, 9},
 	}
 
-	chunks := snapshotItems(expectItems)
+	chunks := snapshotItems(expectItems, newExtSnapshotter(10))
 
 	// Restore errors on invalid format
-	err := manager.Restore(types.Snapshot{
+	err = manager.Restore(types.Snapshot{
 		Height:   3,
 		Format:   0,
 		Hash:     []byte{1, 2, 3},
@@ -206,6 +214,7 @@ func TestManager_Restore(t *testing.T) {
 	}
 
 	assert.Equal(t, expectItems, target.items)
+	assert.Equal(t, 10, len(extSnapshotter.state))
 
 	// The snapshot is saved in local snapshot store
 	snapshots, err := store.List()
@@ -236,6 +245,92 @@ func TestManager_Restore(t *testing.T) {
 		Metadata: types.Metadata{ChunkHashes: checksums(chunks)},
 	})
 	require.NoError(t, err)
+}
+
+const snapshotMaxItemSize = int(512e6) // Copied from github.com/cosmos/cosmos-sdk/snapshots
+
+func TestManager_RestoreLargeItem(t *testing.T) {
+	store := setupStore(t)
+	target := &mockSnapshotter{}
+	extSnapshotter := newExtSnapshotter(0)
+	manager := snapshots.NewManager(store, opts, target, nil, log.NewNopLogger())
+	err := manager.RegisterExtensions(extSnapshotter)
+	require.NoError(t, err)
+
+	largeItem := make([]byte, snapshotMaxItemSize)
+
+	// The protobuf wrapper introduces extra bytes
+	adjustedSize := 2*snapshotMaxItemSize - (&types.SnapshotItem{
+		Item: &types.SnapshotItem_ExtensionPayload{
+			ExtensionPayload: &types.SnapshotExtensionPayload{
+				Payload: largeItem,
+			},
+		},
+	}).Size()
+	largeItem = largeItem[:adjustedSize]
+	expectItems := [][]byte{largeItem}
+
+	chunks := snapshotItems(expectItems, newExtSnapshotter(1))
+
+	// Starting a restore works
+	err = manager.Restore(types.Snapshot{
+		Height:   3,
+		Format:   2,
+		Hash:     []byte{1, 2, 3},
+		Chunks:   1,
+		Metadata: types.Metadata{ChunkHashes: checksums(chunks)},
+	})
+	require.NoError(t, err)
+
+	// Feeding the chunks should work
+	for i, chunk := range chunks {
+		done, err := manager.RestoreChunk(chunk)
+		require.NoError(t, err)
+		if i == len(chunks)-1 {
+			assert.True(t, done)
+		} else {
+			assert.False(t, done)
+		}
+	}
+
+	assert.Equal(t, expectItems, target.items)
+	assert.Equal(t, 1, len(extSnapshotter.state))
+}
+
+func TestManager_CannotRestoreTooLargeItem(t *testing.T) {
+	store := setupStore(t)
+	target := &mockSnapshotter{}
+	extSnapshotter := newExtSnapshotter(0)
+	manager := snapshots.NewManager(store, opts, target, nil, log.NewNopLogger())
+	err := manager.RegisterExtensions(extSnapshotter)
+	require.NoError(t, err)
+
+	// The protobuf wrapper introduces extra bytes
+	largeItem := make([]byte, snapshotMaxItemSize)
+	expectItems := [][]byte{largeItem}
+
+	chunks := snapshotItems(expectItems, newExtSnapshotter(1))
+
+	// Starting a restore works
+	err = manager.Restore(types.Snapshot{
+		Height:   3,
+		Format:   2,
+		Hash:     []byte{1, 2, 3},
+		Chunks:   1,
+		Metadata: types.Metadata{ChunkHashes: checksums(chunks)},
+	})
+	require.NoError(t, err)
+
+	// Feeding the chunks fails
+	for _, chunk := range chunks {
+		_, err = manager.RestoreChunk(chunk)
+
+		if err != nil {
+			break
+		}
+	}
+	require.Error(t, err)
+	require.True(t, errors.Is(err, io.ErrShortBuffer))
 }
 
 func TestManager_TakeError(t *testing.T) {

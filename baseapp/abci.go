@@ -203,13 +203,19 @@ func (app *BaseApp) EndBlock(req abci.RequestEndBlock) (res abci.ResponseEndBloc
 	}
 
 	if app.endBlocker != nil {
-		res = app.endBlocker(app.deliverState.ctx, req)
+		// [AGORIC] Propagate the event history.
+		enhancedEm := sdk.NewEventManagerWithHistory(app.deliverState.eventHistory)
+		enhancedCtx := app.deliverState.ctx.WithEventManager(enhancedEm)
+
+		res = app.endBlocker(enhancedCtx, req)
 		res.Events = sdk.MarkEventsToIndex(res.Events, app.indexEvents)
 	}
 
 	if cp := app.GetConsensusParams(app.deliverState.ctx); cp != nil {
 		res.ConsensusParamUpdates = cp
 	}
+
+	app.deliverState.eventHistory = []abci.Event{}
 
 	// call the streaming service hooks with the EndBlock messages
 	for _, streamingListener := range app.abciListeners {
@@ -262,6 +268,17 @@ func (app *BaseApp) CheckTx(req abci.RequestCheckTx) abci.ResponseCheckTx {
 // Regardless of tx execution outcome, the ResponseDeliverTx will contain relevant
 // gas execution context.
 func (app *BaseApp) DeliverTx(req abci.RequestDeliverTx) (res abci.ResponseDeliverTx) {
+	// [AGORIC] Remember event history for successful deliveries.
+	// deliverTxWithoutEventHistory is the upstream cosmos-sdk DeliverTx.
+	res = app.deliverTxWithoutEventHistory(req)
+	// When successful, remember event history.
+	if res.Code == sdkerrors.SuccessABCICode {
+		app.deliverState.eventHistory = append(app.deliverState.eventHistory, res.Events...)
+	}
+	return res
+}
+
+func (app *BaseApp) deliverTxWithoutEventHistory(req abci.RequestDeliverTx) (res abci.ResponseDeliverTx) {
 	gInfo := sdk.GasInfo{}
 	resultStr := "successful"
 
@@ -303,6 +320,22 @@ func (app *BaseApp) DeliverTx(req abci.RequestDeliverTx) (res abci.ResponseDeliv
 // against that height and gracefully halt if it matches the latest committed
 // height.
 func (app *BaseApp) Commit() abci.ResponseCommit {
+	// Upstream cosmos-sdk unconditionally calls SnapshotIfApplicable, like:
+	//    go app.snapshotManager.SnapshotIfApplicable(header.Height)
+	// We separate that into determination in CommitWithoutSnapshot
+	// and initiation (if applicable) here.
+	res, snapshotHeight := app.CommitWithoutSnapshot()
+	if snapshotHeight > 0 {
+		go app.snapshotManager.Snapshot(snapshotHeight)
+	}
+
+	return res
+}
+
+// CommitWithoutSnapshot is like Commit but instead of starting the snapshot goroutine
+// it returns a positive height to indicate that a snapshot is warranted.
+// It can be used by apps to synchronously manage snapshot logic, especially initiation.
+func (app *BaseApp) CommitWithoutSnapshot() (_res abci.ResponseCommit, snapshotHeight int64) {
 	header := app.deliverState.ctx.BlockHeader()
 	retainHeight := app.GetBlockRetentionHeight(header.Height)
 
@@ -353,9 +386,11 @@ func (app *BaseApp) Commit() abci.ResponseCommit {
 		app.halt()
 	}
 
-	go app.snapshotManager.SnapshotIfApplicable(header.Height)
+	if app.snapshotManager.ShouldTakeSnapshot(header.Height) {
+		snapshotHeight = header.Height
+	}
 
-	return res
+	return res, snapshotHeight
 }
 
 // halt attempts to gracefully shutdown the node via SIGINT and SIGTERM falling
@@ -380,6 +415,16 @@ func (app *BaseApp) halt() {
 	os.Exit(0)
 }
 
+// Snapshot takes a snapshot of the current state and prunes any old snapshottypes.
+// It should be started as a goroutine
+func (app *BaseApp) Snapshot(height int64) {
+	if app.snapshotManager == nil {
+		app.logger.Info("snapshot manager not configured")
+		return
+	}
+	app.snapshotManager.Snapshot(height)
+}
+
 // Query implements the ABCI interface. It delegates to CommitMultiStore if it
 // implements Queryable.
 func (app *BaseApp) Query(req abci.RequestQuery) (res abci.ResponseQuery) {
@@ -392,8 +437,19 @@ func (app *BaseApp) Query(req abci.RequestQuery) (res abci.ResponseQuery) {
 	}()
 
 	// when a client did not provide a query height, manually inject the latest
+	lastHeight := app.LastBlockHeight()
 	if req.Height == 0 {
-		req.Height = app.LastBlockHeight()
+		req.Height = lastHeight
+	}
+	if req.Height > lastHeight {
+		return sdkerrors.QueryResult(
+			sdkerrors.Wrapf(
+				sdkerrors.ErrInvalidHeight,
+				"given height %d is greater than latest height %d",
+				req.Height, lastHeight,
+			),
+			app.trace,
+		)
 	}
 
 	telemetry.IncrCounter(1, "query", "count")
