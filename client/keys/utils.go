@@ -1,21 +1,17 @@
 package keys
 
 import (
+	"encoding/json"
 	"fmt"
 	"io"
 
 	"sigs.k8s.io/yaml"
 
+	"github.com/cosmos/cosmos-sdk/client/flags"
 	cryptokeyring "github.com/cosmos/cosmos-sdk/crypto/keyring"
 )
 
-// available output formats.
-const (
-	OutputFormatText = "text"
-	OutputFormatJSON = "json"
-)
-
-type bechKeyOutFn func(k *cryptokeyring.Record) (cryptokeyring.KeyOutput, error)
+type bechKeyOutFn func(k *cryptokeyring.Record) (KeyOutput, error)
 
 func printKeyringRecord(w io.Writer, k *cryptokeyring.Record, bechKeyOut bechKeyOutFn, output string) error {
 	ko, err := bechKeyOut(k)
@@ -24,13 +20,13 @@ func printKeyringRecord(w io.Writer, k *cryptokeyring.Record, bechKeyOut bechKey
 	}
 
 	switch output {
-	case OutputFormatText:
-		if err := printTextRecords(w, []cryptokeyring.KeyOutput{ko}); err != nil {
+	case flags.OutputFormatText:
+		if err := printTextRecords(w, []KeyOutput{ko}); err != nil {
 			return err
 		}
 
-	case OutputFormatJSON:
-		out, err := KeysCdc.MarshalJSON(ko)
+	case flags.OutputFormatJSON:
+		out, err := json.Marshal(ko)
 		if err != nil {
 			return err
 		}
@@ -44,21 +40,19 @@ func printKeyringRecord(w io.Writer, k *cryptokeyring.Record, bechKeyOut bechKey
 }
 
 func printKeyringRecords(w io.Writer, records []*cryptokeyring.Record, output string) error {
-	kos, err := cryptokeyring.MkAccKeysOutput(records)
+	kos, err := MkAccKeysOutput(records)
 	if err != nil {
 		return err
 	}
 
 	switch output {
-	case OutputFormatText:
+	case flags.OutputFormatText:
 		if err := printTextRecords(w, kos); err != nil {
 			return err
 		}
 
-	case OutputFormatJSON:
-		// TODO https://github.com/cosmos/cosmos-sdk/issues/8046
-		// Replace AminoCdc with Proto JSON
-		out, err := KeysCdc.MarshalJSON(kos)
+	case flags.OutputFormatJSON:
+		out, err := json.Marshal(kos)
 		if err != nil {
 			return err
 		}
@@ -71,7 +65,7 @@ func printKeyringRecords(w io.Writer, records []*cryptokeyring.Record, output st
 	return nil
 }
 
-func printTextRecords(w io.Writer, kos []cryptokeyring.KeyOutput) error {
+func printTextRecords(w io.Writer, kos []KeyOutput) error {
 	out, err := yaml.Marshal(&kos)
 	if err != nil {
 		return err

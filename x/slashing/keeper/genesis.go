@@ -6,8 +6,8 @@ import (
 	stakingtypes "github.com/cosmos/cosmos-sdk/x/staking/types"
 )
 
-// InitGenesis initialize default parameters
-// and the keeper's address to pubkey map
+// InitGenesis initializes default parameters and the keeper's address to
+// pubkey map.
 func (keeper Keeper) InitGenesis(ctx sdk.Context, stakingKeeper types.StakingKeeper, data *types.GenesisState) {
 	stakingKeeper.IterateValidators(ctx,
 		func(index int64, validator stakingtypes.ValidatorI) bool {
@@ -15,13 +15,14 @@ func (keeper Keeper) InitGenesis(ctx sdk.Context, stakingKeeper types.StakingKee
 			if err != nil {
 				panic(err)
 			}
+
 			keeper.AddPubkey(ctx, consPk)
 			return false
 		},
 	)
 
 	for _, info := range data.SigningInfos {
-		address, err := sdk.ConsAddressFromBech32(info.Address)
+		address, err := keeper.sk.ConsensusAddressCodec().StringToBytes(info.Address)
 		if err != nil {
 			panic(err)
 		}
@@ -29,23 +30,31 @@ func (keeper Keeper) InitGenesis(ctx sdk.Context, stakingKeeper types.StakingKee
 	}
 
 	for _, array := range data.MissedBlocks {
-		address, err := sdk.ConsAddressFromBech32(array.Address)
+		address, err := keeper.sk.ConsensusAddressCodec().StringToBytes(array.Address)
 		if err != nil {
 			panic(err)
 		}
+
 		for _, missed := range array.MissedBlocks {
-			keeper.SetValidatorMissedBlockBitArray(ctx, address, missed.Index, missed.Missed)
+			if err := keeper.SetMissedBlockBitmapValue(ctx, address, missed.Index, missed.Missed); err != nil {
+				panic(err)
+			}
 		}
 	}
 
-	keeper.SetParams(ctx, data.Params)
+	if err := keeper.SetParams(ctx, data.Params); err != nil {
+		panic(err)
+	}
 }
 
 // ExportGenesis writes the current store values
 // to a genesis file, which can be imported again
 // with InitGenesis
 func (keeper Keeper) ExportGenesis(ctx sdk.Context) (data *types.GenesisState) {
-	params := keeper.GetParams(ctx)
+	params, err := keeper.GetParams(ctx)
+	if err != nil {
+		panic(err)
+	}
 	signingInfos := make([]types.SigningInfo, 0)
 	missedBlocks := make([]types.ValidatorMissedBlocks, 0)
 	keeper.IterateValidatorSigningInfos(ctx, func(address sdk.ConsAddress, info types.ValidatorSigningInfo) (stop bool) {
@@ -55,7 +64,10 @@ func (keeper Keeper) ExportGenesis(ctx sdk.Context) (data *types.GenesisState) {
 			ValidatorSigningInfo: info,
 		})
 
-		localMissedBlocks := keeper.GetValidatorMissedBlocks(ctx, address)
+		localMissedBlocks, err := keeper.GetValidatorMissedBlocks(ctx, address)
+		if err != nil {
+			panic(err)
+		}
 
 		missedBlocks = append(missedBlocks, types.ValidatorMissedBlocks{
 			Address:      bechAddr,

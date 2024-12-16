@@ -1,23 +1,20 @@
-# Cosmos SDK v0.46.16 Release Notes
+# Cosmos SDK v0.50.10 Release Notes
 
-This patch release introduces one dependency bump in the v0.46.x line of the Cosmos SDK.
+💬 [**Release Discussion**](https://github.com/orgs/cosmos/discussions/58)
 
-Ensure you have the following replaces in the `go.mod` of your application:
+## 🚀 Highlights
 
-```go
-// use cometbft
-replace github.com/tendermint/tendermint => github.com/cometbft/cometbft v0.34.29
-// replace broken goleveldb
-replace github.com/syndtr/goleveldb => github.com/syndtr/goleveldb v1.0.1-0.20210819022825-2ae1ddf74ef7
-```
+For this month patch release of the v0.50.x line, some bugs were fixed.
 
-Please see the [CHANGELOG](https://github.com/cosmos/cosmos-sdk/blob/v0.46.16/CHANGELOG.md) for an exhaustive list of changes.
+Notably, we fixed the following:
 
-**Full Commit History**: https://github.com/cosmos/cosmos-sdk/compare/v0.46.15...v0.46.16
+* Add the root command `module-hash-by-height` to query and retrieve module hashes at a specific height
+* `PreBlock` events (mainly `x/upgrade`) are now emitted (this time, for real)
+* A fix in runtime baseapp option ordering, giving issue when other modules were having options
 
-## End-of-Life Notice
+## 📝 Changelog
 
-`v0.46.16` is the last release of the `v0.46.x` line. Per this version, the v0.46.x line reached its end-of-life.
-The SDK team maintains the [latest two major versions of the SDK](https://github.com/cosmos/cosmos-sdk/blob/main/RELEASE_PROCESS.md#major-release-maintenance). This means no features, improvements or bug fixes will be backported to the `v0.46.x` line. Per our policy, the `v0.46.x` line will receive security patches only.
+Check out the [changelog](https://github.com/cosmos/cosmos-sdk/blob/v0.50.10/CHANGELOG.md) for an exhaustive list of changes, or [compare changes](https://github.com/cosmos/cosmos-sdk/compare/v0.50.9...v0.50.10) from the last release.
 
-We encourage all chains to upgrade to Cosmos SDK Eden (`v0.50.0`), or the `v0.47.x` line.
+Refer to the [upgrading guide](https://github.com/cosmos/cosmos-sdk/blob/release/v0.50.x/UPGRADING.md) when migrating from `v0.47.x` to `v0.50.1`.
+Note, that the next SDK release, v0.52, will not include `x/params` migration, when migrating from < v0.47, v0.50.x **or** v0.47.x, is a mandatory migration.

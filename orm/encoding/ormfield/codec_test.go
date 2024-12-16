@@ -5,15 +5,13 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/cosmos/cosmos-sdk/orm/encoding/ormfield"
-
 	"google.golang.org/protobuf/reflect/protoreflect"
 	"gotest.tools/v3/assert"
 	"pgregory.net/rapid"
 
-	"github.com/cosmos/cosmos-sdk/orm/types/ormerrors"
-
-	"github.com/cosmos/cosmos-sdk/orm/internal/testutil"
+	"cosmossdk.io/orm/encoding/ormfield"
+	"cosmossdk.io/orm/internal/testutil"
+	"cosmossdk.io/orm/types/ormerrors"
 )
 
 func TestCodec(t *testing.T) {
@@ -31,7 +29,7 @@ func testCodec(t *testing.T, spec testutil.TestFieldSpec) {
 	})
 }
 
-func testCodecNT(t *testing.T, fname protoreflect.Name, generator *rapid.Generator, nonTerminal bool) {
+func testCodecNT(t *testing.T, fname protoreflect.Name, generator *rapid.Generator[any], nonTerminal bool) {
 	cdc, err := testutil.MakeTestCodec(fname, nonTerminal)
 	assert.NilError(t, err)
 	rapid.Check(t, func(t *rapid.T) {
@@ -98,18 +96,19 @@ func TestCompactUInt32(t *testing.T) {
 
 	// randomized tests
 	rapid.Check(t, func(t *rapid.T) {
-		x := rapid.Uint32().Draw(t, "x").(uint32)
-		y := rapid.Uint32().Draw(t, "y").(uint32)
+		x := rapid.Uint32().Draw(t, "x")
+		y := rapid.Uint32().Draw(t, "y")
 
 		bx := ormfield.EncodeCompactUint32(x)
 		by := ormfield.EncodeCompactUint32(y)
 
 		cmp := bytes.Compare(bx, by)
-		if x < y {
+		switch {
+		case x < y:
 			assert.Equal(t, -1, cmp)
-		} else if x == y {
+		case x == y:
 			assert.Equal(t, 0, cmp)
-		} else {
+		default:
 			assert.Equal(t, 1, cmp)
 		}
 
@@ -146,18 +145,19 @@ func TestCompactUInt64(t *testing.T) {
 
 	// randomized tests
 	rapid.Check(t, func(t *rapid.T) {
-		x := rapid.Uint64().Draw(t, "x").(uint64)
-		y := rapid.Uint64().Draw(t, "y").(uint64)
+		x := rapid.Uint64().Draw(t, "x")
+		y := rapid.Uint64().Draw(t, "y")
 
 		bx := ormfield.EncodeCompactUint64(x)
 		by := ormfield.EncodeCompactUint64(y)
 
 		cmp := bytes.Compare(bx, by)
-		if x < y {
+		switch {
+		case x < y:
 			assert.Equal(t, -1, cmp)
-		} else if x == y {
+		case x == y:
 			assert.Equal(t, 0, cmp)
-		} else {
+		default:
 			assert.Equal(t, 1, cmp)
 		}
 

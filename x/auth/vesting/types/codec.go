@@ -4,12 +4,10 @@ import (
 	"github.com/cosmos/cosmos-sdk/codec"
 	"github.com/cosmos/cosmos-sdk/codec/legacy"
 	"github.com/cosmos/cosmos-sdk/codec/types"
-	cryptocodec "github.com/cosmos/cosmos-sdk/crypto/codec"
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	"github.com/cosmos/cosmos-sdk/types/msgservice"
 	authtypes "github.com/cosmos/cosmos-sdk/x/auth/types"
 	"github.com/cosmos/cosmos-sdk/x/auth/vesting/exported"
-	authzcodec "github.com/cosmos/cosmos-sdk/x/authz/codec"
 )
 
 // RegisterLegacyAminoCodec registers the vesting interfaces and concrete types on the
@@ -17,18 +15,13 @@ import (
 func RegisterLegacyAminoCodec(cdc *codec.LegacyAmino) {
 	cdc.RegisterInterface((*exported.VestingAccount)(nil), nil)
 	cdc.RegisterConcrete(&BaseVestingAccount{}, "cosmos-sdk/BaseVestingAccount", nil)
-	cdc.RegisterConcrete(&ClawbackVestingAccount{}, "cosmos-sdk/ClawbackVestingAccount", nil)
 	cdc.RegisterConcrete(&ContinuousVestingAccount{}, "cosmos-sdk/ContinuousVestingAccount", nil)
 	cdc.RegisterConcrete(&DelayedVestingAccount{}, "cosmos-sdk/DelayedVestingAccount", nil)
 	cdc.RegisterConcrete(&PeriodicVestingAccount{}, "cosmos-sdk/PeriodicVestingAccount", nil)
 	cdc.RegisterConcrete(&PermanentLockedAccount{}, "cosmos-sdk/PermanentLockedAccount", nil)
-	legacy.RegisterAminoMsg(cdc, &MsgClawback{}, "cosmos-sdk/MsgClawback")
-	// msgName needs to be 39 chars or less, but only needs to be unique - abbreviate next two
-	legacy.RegisterAminoMsg(cdc, &MsgCreateClawbackVestingAccount{}, "cosmos-sdk/MsgCreateClawbackVestingAcc")
-	legacy.RegisterAminoMsg(cdc, &MsgCreatePeriodicVestingAccount{}, "cosmos-sdk/MsgCreatePeriodicVestingAcc")
-	legacy.RegisterAminoMsg(cdc, &MsgCreatePermanentLockedAccount{}, "cosmos-sdk/MsgCreatePermLockedAccount")
 	legacy.RegisterAminoMsg(cdc, &MsgCreateVestingAccount{}, "cosmos-sdk/MsgCreateVestingAccount")
-	legacy.RegisterAminoMsg(cdc, &MsgReturnGrants{}, "cosmos-sdk/MsgReturnGrants")
+	legacy.RegisterAminoMsg(cdc, &MsgCreatePermanentLockedAccount{}, "cosmos-sdk/MsgCreatePermLockedAccount")
+	legacy.RegisterAminoMsg(cdc, &MsgCreatePeriodicVestingAccount{}, "cosmos-sdk/MsgCreatePeriodVestAccount")
 }
 
 // RegisterInterface associates protoName with AccountI and VestingAccount
@@ -41,17 +34,15 @@ func RegisterInterfaces(registry types.InterfaceRegistry) {
 		&DelayedVestingAccount{},
 		&PeriodicVestingAccount{},
 		&PermanentLockedAccount{},
-		&ClawbackVestingAccount{},
 	)
 
 	registry.RegisterImplementations(
-		(*authtypes.AccountI)(nil),
+		(*sdk.AccountI)(nil),
 		&BaseVestingAccount{},
 		&DelayedVestingAccount{},
 		&ContinuousVestingAccount{},
 		&PeriodicVestingAccount{},
 		&PermanentLockedAccount{},
-		&ClawbackVestingAccount{},
 	)
 
 	registry.RegisterImplementations(
@@ -61,33 +52,13 @@ func RegisterInterfaces(registry types.InterfaceRegistry) {
 		&ContinuousVestingAccount{},
 		&PeriodicVestingAccount{},
 		&PermanentLockedAccount{},
-		&ClawbackVestingAccount{},
 	)
 
 	registry.RegisterImplementations(
 		(*sdk.Msg)(nil),
-		&MsgClawback{},
-		&MsgCreateClawbackVestingAccount{},
-		&MsgCreatePeriodicVestingAccount{},
-		&MsgCreatePermanentLockedAccount{},
 		&MsgCreateVestingAccount{},
-		&MsgReturnGrants{},
+		&MsgCreatePermanentLockedAccount{},
 	)
 
 	msgservice.RegisterMsgServiceDesc(registry, &_Msg_serviceDesc)
-}
-
-var (
-	amino     = codec.NewLegacyAmino()
-	ModuleCdc = codec.NewAminoCodec(amino)
-)
-
-func init() {
-	RegisterLegacyAminoCodec(amino)
-	cryptocodec.RegisterCrypto(amino)
-	sdk.RegisterLegacyAminoCodec(amino)
-
-	// Register all Amino interfaces and concrete types on the authz Amino codec so that this can later be
-	// used to properly serialize MsgGrant and MsgExec instances
-	RegisterLegacyAminoCodec(authzcodec.Amino)
 }

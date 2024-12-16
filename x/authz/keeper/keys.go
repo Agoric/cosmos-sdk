@@ -29,7 +29,7 @@ const StoreKey = authz.ModuleName
 // Items are stored with the following key: values
 //
 // - 0x01<granterAddressLen (1 Byte)><granterAddress_Bytes><granteeAddressLen (1 Byte)><granteeAddress_Bytes><msgType_Bytes>: Grant
-func grantStoreKey(grantee sdk.AccAddress, granter sdk.AccAddress, msgType string) []byte {
+func grantStoreKey(grantee, granter sdk.AccAddress, msgType string) []byte {
 	m := conv.UnsafeStrToBytes(msgType)
 	granter = address.MustLengthPrefix(granter)
 	grantee = address.MustLengthPrefix(grantee)
@@ -78,8 +78,8 @@ func parseGrantQueueKey(key []byte) (time.Time, sdk.AccAddress, sdk.AccAddress, 
 // expiration, then it should not be used in the pruning queue.
 // Key format is:
 //
-//	0x02<grant_expiration_Bytes>: GrantQueueItem
-func GrantQueueKey(expiration time.Time, granter sdk.AccAddress, grantee sdk.AccAddress) []byte {
+//	0x02<expiration><granterAddressLen (1 Byte)><granterAddressBytes><granteeAddressLen (1 Byte)><granteeAddressBytes>: GrantQueueItem
+func GrantQueueKey(expiration time.Time, granter, grantee sdk.AccAddress) []byte {
 	exp := sdk.FormatTimeBytes(expiration)
 	granter = address.MustLengthPrefix(granter)
 	grantee = address.MustLengthPrefix(grantee)

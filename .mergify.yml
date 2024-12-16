@@ -11,16 +11,16 @@ queue_rules:
 pull_request_rules:
   - name: backport patches to Agoric branch
     conditions:
-      - base=Agoric-ag0
-      - label=backport/Agoric
+      - base=main
+      - label=backport/0.46.x
     actions:
       backport:
         branches:
-          - Agoric
-  - name: backport patches to Agoric-ag0 branch
+          - release/v0.46.x
+  - name: backport patches to v0.45.x branch
     conditions:
-      - base=Agoric
-      - label=backport/Agoric-ag0
+      - base=main
+      - label=backport/0.45.x
     actions:
       backport:
         branches:

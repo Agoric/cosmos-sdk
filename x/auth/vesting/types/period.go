@@ -5,8 +5,6 @@ import (
 	"strings"
 	"time"
 
-	"sigs.k8s.io/yaml"
-
 	sdk "github.com/cosmos/cosmos-sdk/types"
 )
 
@@ -16,12 +14,6 @@ type Periods []Period
 // Duration is converts the period Length from seconds to a time.Duration
 func (p Period) Duration() time.Duration {
 	return time.Duration(p.Length) * time.Second
-}
-
-// String implements the fmt.Stringer interface
-func (p Period) String() string {
-	out, _ := yaml.Marshal(p)
-	return string(out)
 }
 
 // TotalLength return the total length in seconds for a period
@@ -59,6 +51,23 @@ func (p Periods) String() string {
 		%s`, strings.Join(periodsListString, ", ")))
 }
 
+// coinsMin returns the minimum of its inputs for all denominations.
+func coinsMin(a, b sdk.Coins) sdk.Coins {
+	min := sdk.NewCoins()
+	for _, coinA := range a {
+		denom := coinA.Denom
+		bAmt := b.AmountOfNoDenomValidation(denom)
+		minAmt := coinA.Amount
+		if minAmt.GT(bAmt) {
+			minAmt = bAmt
+		}
+		if minAmt.IsPositive() {
+			min = min.Add(sdk.NewCoin(denom, minAmt))
+		}
+	}
+	return min
+}
+
 // A "schedule" is an increasing step function of Coins over time.
 // It's specified as an absolute start time and a sequence of relative
 // periods, with each step at the end of a period. A schedule may also
@@ -89,39 +98,6 @@ func ReadSchedule(startTime, endTime int64, periods []Period, totalCoins sdk.Coi
 	return coins
 }
 
-// max64 returns the maximum of its inputs.
-func max64(i, j int64) int64 {
-	if i > j {
-		return i
-	}
-	return j
-}
-
-// min64 returns the minimum of its inputs.
-func min64(i, j int64) int64 {
-	if i < j {
-		return i
-	}
-	return j
-}
-
-// coinsMin returns the minimum of its inputs for all denominations.
-func coinsMin(a, b sdk.Coins) sdk.Coins {
-	min := sdk.NewCoins()
-	for _, coinA := range a {
-		denom := coinA.Denom
-		bAmt := b.AmountOfNoDenomValidation(denom)
-		minAmt := coinA.Amount
-		if minAmt.GT(bAmt) {
-			minAmt = bAmt
-		}
-		if minAmt.IsPositive() {
-			min = min.Add(sdk.NewCoin(denom, minAmt))
-		}
-	}
-	return min
-}
-
 // DisjunctPeriods returns the union of two vesting period schedules.
 // The returned schedule is the union of the vesting events, with simultaneous
 // events combined into a single event.
@@ -135,8 +111,8 @@ func DisjunctPeriods(startP, startQ int64, periodsP, periodsQ []Period) (int64, 
 	iQ := 0         // q indexes before this have been merged
 	lenP := len(periodsP)
 	lenQ := len(periodsQ)
-	startTime := min64(startP, startQ) // we pick the earlier time
-	time := startTime                  // time of last merged event, or the start time
+	startTime := min(startP, startQ) // we pick the earlier time
+	time := startTime                // time of last merged event, or the start time
 	merged := []Period{}
 
 	// emit adds an output period and updates the last event time
@@ -200,7 +176,7 @@ func DisjunctPeriods(startP, startQ int64, periodsP, periodsQ []Period) (int64, 
 
 // ConjunctPeriods returns the combination of two period schedules where the result is the minimum of the two schedules.
 func ConjunctPeriods(startP, startQ int64, periodsP, periodsQ []Period) (int64, int64, []Period) {
-	startTime := min64(startP, startQ)
+	startTime := min(startP, startQ)
 	time := startTime
 
 	timeP := startP
@@ -304,7 +280,7 @@ func ConjunctPeriods(startP, startQ int64, periodsP, periodsQ []Period) (int64, 
 
 // AlignSchedules rewrites the first period length to align the two arguments to the same start time.
 func AlignSchedules(startP, startQ int64, p, q []Period) (startTime, endTime int64) {
-	startTime = min64(startP, startQ)
+	startTime = min(startP, startQ)
 
 	if len(p) > 0 {
 		p[0].Length += startP - startTime
@@ -323,4 +299,18 @@ func AlignSchedules(startP, startQ int64, p, q []Period) (startTime, endTime int
 	}
 	endTime = max64(endP, endQ)
 	return
+}
+
+func max64(a, b int64) int64 {
+	if a > b {
+		return a
+	}
+	return b
+}
+
+func min64(a, b int64) int64 {
+	if a < b {
+		return a
+	}
+	return b
 }

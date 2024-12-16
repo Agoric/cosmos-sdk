@@ -3,14 +3,13 @@ package orm
 import (
 	"testing"
 
-	"pgregory.net/rapid"
-
 	"github.com/stretchr/testify/require"
+	"pgregory.net/rapid"
 )
 
 func TestPrefixRangeProperty(t *testing.T) {
 	t.Run("TestPrefixRange", rapid.MakeCheck(func(t *rapid.T) {
-		prefix := rapid.SliceOf(rapid.Byte()).Draw(t, "prefix").([]byte)
+		prefix := rapid.SliceOf(rapid.Byte()).Draw(t, "prefix")
 
 		start, end := PrefixRange(prefix)
 

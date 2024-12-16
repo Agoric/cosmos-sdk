@@ -3,11 +3,15 @@ package types
 import (
 	fmt "fmt"
 
-	"github.com/gogo/protobuf/proto"
+	"github.com/cosmos/gogoproto/proto"
+	protov2 "google.golang.org/protobuf/proto"
+
+	errorsmod "cosmossdk.io/errors"
 
 	sdkerrors "github.com/cosmos/cosmos-sdk/types/errors"
 )
 
+// nolint:revive // XXX is reqired for proto compatibility
 type Any struct {
 	// A URL/resource name that uniquely identifies the type of the serialized
 	// protocol buffer message. This string must contain at least
@@ -38,14 +42,13 @@ type Any struct {
 	// used with implementation specific semantics.
 
 	TypeUrl string `protobuf:"bytes,1,opt,name=type_url,json=typeUrl,proto3" json:"type_url,omitempty"`
+
 	// Must be a valid serialized protocol buffer of the above specified type.
 	Value []byte `protobuf:"bytes,2,opt,name=value,proto3" json:"value,omitempty"`
 
 	XXX_NoUnkeyedLiteral struct{} `json:"-"`
-
-	XXX_unrecognized []byte `json:"-"`
-
-	XXX_sizecache int32 `json:"-"`
+	XXX_unrecognized     []byte   `json:"-"`
+	XXX_sizecache        int32    `json:"-"`
 
 	cachedValue interface{}
 
@@ -58,16 +61,25 @@ type Any struct {
 // unmarshaling
 func NewAnyWithValue(v proto.Message) (*Any, error) {
 	if v == nil {
-		return nil, sdkerrors.Wrap(sdkerrors.ErrPackAny, "Expecting non nil value to create a new Any")
+		return nil, errorsmod.Wrap(sdkerrors.ErrPackAny, "Expecting non nil value to create a new Any")
 	}
 
-	bz, err := proto.Marshal(v)
+	var (
+		bz  []byte
+		err error
+	)
+	if msg, ok := v.(protov2.Message); ok {
+		protov2MarshalOpts := protov2.MarshalOptions{Deterministic: true}
+		bz, err = protov2MarshalOpts.Marshal(msg)
+	} else {
+		bz, err = proto.Marshal(v)
+	}
 	if err != nil {
 		return nil, err
 	}
 
 	return &Any{
-		TypeUrl:     "/" + proto.MessageName(v),
+		TypeUrl:     MsgTypeURL(v),
 		Value:       bz,
 		cachedValue: v,
 	}, nil
@@ -92,8 +104,18 @@ func UnsafePackAny(x interface{}) *Any {
 // the packed value so that it can be retrieved from GetCachedValue without
 // unmarshaling
 func (any *Any) pack(x proto.Message) error {
-	any.TypeUrl = "/" + proto.MessageName(x)
-	bz, err := proto.Marshal(x)
+	any.TypeUrl = MsgTypeURL(x)
+
+	var (
+		bz  []byte
+		err error
+	)
+	if msg, ok := x.(protov2.Message); ok {
+		protov2MarshalOpts := protov2.MarshalOptions{Deterministic: true}
+		bz, err = protov2MarshalOpts.Marshal(msg)
+	} else {
+		bz, err = proto.Marshal(x)
+	}
 	if err != nil {
 		return err
 	}

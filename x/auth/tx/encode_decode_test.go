@@ -32,7 +32,7 @@ func TestDefaultTxDecoderError(t *testing.T) {
 	require.NoError(t, err)
 
 	_, err = decoder(txBz)
-	require.EqualError(t, err, "unable to resolve type URL /testdata.TestMsg: tx parse error")
+	require.EqualError(t, err, "unable to resolve type URL /testpb.TestMsg: tx parse error")
 
 	testdata.RegisterInterfaces(registry)
 	_, err = decoder(txBz)
@@ -171,6 +171,7 @@ func TestRejectNonADR027(t *testing.T) {
 	require.NoError(t, err)
 	authInfo := &testdata.TestUpdatedAuthInfo{Fee: &tx.Fee{GasLimit: 127}} // Look for "127" when debugging the bytes stream.
 	authInfoBz, err := authInfo.Marshal()
+	require.NoError(t, err)
 	txRaw := &tx.TxRaw{
 		BodyBytes:     bodyBz,
 		AuthInfoBytes: authInfoBz,

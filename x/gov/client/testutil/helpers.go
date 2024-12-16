@@ -3,6 +3,8 @@ package testutil
 import (
 	"fmt"
 
+	sdkmath "cosmossdk.io/math"
+
 	"github.com/cosmos/cosmos-sdk/client"
 	"github.com/cosmos/cosmos-sdk/client/flags"
 	"github.com/cosmos/cosmos-sdk/testutil"
@@ -13,13 +15,14 @@ import (
 
 var commonArgs = []string{
 	fmt.Sprintf("--%s=true", flags.FlagSkipConfirmation),
-	fmt.Sprintf("--%s=%s", flags.FlagBroadcastMode, flags.BroadcastBlock),
-	fmt.Sprintf("--%s=%s", flags.FlagFees, sdk.NewCoins(sdk.NewCoin(sdk.DefaultBondDenom, sdk.NewInt(10))).String()),
+	fmt.Sprintf("--%s=%s", flags.FlagBroadcastMode, flags.BroadcastSync),
+	fmt.Sprintf("--%s=%s", flags.FlagFees, sdk.NewCoins(sdk.NewCoin(sdk.DefaultBondDenom, sdkmath.NewInt(10))).String()),
 }
 
 // MsgSubmitLegacyProposal creates a tx for submit legacy proposal
+//
+//nolint:staticcheck // we are intentionally using a deprecated flag here.
 func MsgSubmitLegacyProposal(clientCtx client.Context, from, title, description, proposalType string, extraArgs ...string) (testutil.BufferWriter, error) {
-	//nolint:staticcheck
 	args := append([]string{
 		fmt.Sprintf("--%s=%s", govcli.FlagTitle, title),
 		fmt.Sprintf("--%s=%s", govcli.FlagDescription, description),
@@ -45,6 +48,7 @@ func MsgVote(clientCtx client.Context, from, id, vote string, extraArgs ...strin
 	return clitestutil.ExecTestCLICmd(clientCtx, govcli.NewCmdWeightedVote(), args)
 }
 
+// MsgDeposit deposits on a proposal
 func MsgDeposit(clientCtx client.Context, from, id, deposit string, extraArgs ...string) (testutil.BufferWriter, error) {
 	args := append([]string{
 		id,

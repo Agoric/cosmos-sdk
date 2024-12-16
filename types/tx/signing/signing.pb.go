@@ -7,7 +7,7 @@ import (
 	fmt "fmt"
 	types "github.com/cosmos/cosmos-sdk/codec/types"
 	types1 "github.com/cosmos/cosmos-sdk/crypto/types"
-	proto "github.com/gogo/protobuf/proto"
+	proto "github.com/cosmos/gogoproto/proto"
 	io "io"
 	math "math"
 	math_bits "math/bits"
@@ -43,12 +43,13 @@ const (
 	SignMode_SIGN_MODE_DIRECT SignMode = 1
 	// SIGN_MODE_TEXTUAL is a future signing mode that will verify some
 	// human-readable textual representation on top of the binary representation
-	// from SIGN_MODE_DIRECT. It is currently not supported.
+	// from SIGN_MODE_DIRECT.
+	//
+	// Since: cosmos-sdk 0.50
 	SignMode_SIGN_MODE_TEXTUAL SignMode = 2
 	// SIGN_MODE_DIRECT_AUX specifies a signing mode which uses
 	// SignDocDirectAux. As opposed to SIGN_MODE_DIRECT, this sign mode does not
-	// require signers signing over other signers' `signer_info`. It also allows
-	// for adding Tips in transactions.
+	// require signers signing over other signers' `signer_info`.
 	//
 	// Since: cosmos-sdk 0.46
 	SignMode_SIGN_MODE_DIRECT_AUX SignMode = 3
@@ -213,6 +214,7 @@ type SignatureDescriptor_Data struct {
 	// sum is the oneof that specifies whether this represents single or multi-signature data
 	//
 	// Types that are valid to be assigned to Sum:
+	//
 	//	*SignatureDescriptor_Data_Single_
 	//	*SignatureDescriptor_Data_Multi_
 	Sum isSignatureDescriptor_Data_Sum `protobuf_oneof:"sum"`

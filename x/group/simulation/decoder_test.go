@@ -6,17 +6,19 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/cosmos/cosmos-sdk/simapp"
 	"github.com/cosmos/cosmos-sdk/testutil/testdata"
 	"github.com/cosmos/cosmos-sdk/types/kv"
+	moduletestutil "github.com/cosmos/cosmos-sdk/types/module/testutil"
 	"github.com/cosmos/cosmos-sdk/x/group"
 	"github.com/cosmos/cosmos-sdk/x/group/internal/orm"
 	"github.com/cosmos/cosmos-sdk/x/group/keeper"
+	"github.com/cosmos/cosmos-sdk/x/group/module"
 	"github.com/cosmos/cosmos-sdk/x/group/simulation"
 )
 
 func TestDecodeStore(t *testing.T) {
-	cdc := simapp.MakeTestEncodingConfig().Codec
+	encodingConfig := moduletestutil.MakeTestEncodingConfig(module.AppModuleBasic{})
+	cdc := encodingConfig.Codec
 	dec := simulation.NewDecodeStore(cdc)
 
 	g := group.GroupInfo{Id: 1}

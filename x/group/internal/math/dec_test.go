@@ -2,8 +2,6 @@ package math
 
 import (
 	"fmt"
-	"regexp"
-	"strconv"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -28,7 +26,7 @@ func TestDec(t *testing.T) {
 	t.Run("TestSubAdd", rapid.MakeCheck(testSubAdd))
 	t.Run("TestAddSub", rapid.MakeCheck(testAddSub))
 
-	// Properties about comparision and equality
+	// Properties about comparison and equality
 	t.Run("TestCmpInverse", rapid.MakeCheck(testCmpInverse))
 	t.Run("TestEqualCommutative", rapid.MakeCheck(testEqualCommutative))
 
@@ -65,38 +63,38 @@ func TestDec(t *testing.T) {
 
 	res, err := two.Add(zero)
 	require.NoError(t, err)
-	require.True(t, res.IsEqual(two))
+	require.True(t, res.Equal(two))
 
 	res, err = five.Sub(two)
 	require.NoError(t, err)
-	require.True(t, res.IsEqual(three))
+	require.True(t, res.Equal(three))
 
 	res, err = onePointOneFive.Add(twoPointThreeFour)
 	require.NoError(t, err)
-	require.True(t, res.IsEqual(threePointFourNine))
+	require.True(t, res.Equal(threePointFourNine))
 
 	res, err = threePointFourNine.Sub(two)
 	require.NoError(t, err)
-	require.True(t, res.IsEqual(onePointFourNine))
+	require.True(t, res.Equal(onePointFourNine))
 
 	res, err = minusOne.Sub(four)
 	require.NoError(t, err)
-	require.True(t, res.IsEqual(minusFivePointZero))
+	require.True(t, res.Equal(minusFivePointZero))
 
 	_, err = four.Quo(zero)
 	require.Error(t, err)
 
 	res, err = four.Quo(two)
 	require.NoError(t, err)
-	require.True(t, res.IsEqual(two))
+	require.True(t, res.Equal(two))
 
 	require.False(t, zero.IsNegative())
 	require.False(t, one.IsNegative())
 	require.True(t, minusOne.IsNegative())
 }
 
-var genDec *rapid.Generator = rapid.Custom(func(t *rapid.T) Dec {
-	f := rapid.Float64().Draw(t, "f").(float64)
+var genDec *rapid.Generator[Dec] = rapid.Custom(func(t *rapid.T) Dec {
+	f := rapid.Float64().Draw(t, "f")
 	dec, err := NewDecFromString(fmt.Sprintf("%g", f))
 	require.NoError(t, err)
 	return dec
@@ -109,8 +107,8 @@ type floatAndDec struct {
 }
 
 // Generate a Dec value along with the float used to create it
-var genFloatAndDec *rapid.Generator = rapid.Custom(func(t *rapid.T) floatAndDec {
-	f := rapid.Float64().Draw(t, "f").(float64)
+var genFloatAndDec *rapid.Generator[floatAndDec] = rapid.Custom(func(t *rapid.T) floatAndDec {
+	f := rapid.Float64().Draw(t, "f")
 	dec, err := NewDecFromString(fmt.Sprintf("%g", f))
 	require.NoError(t, err)
 	return floatAndDec{f, dec}
@@ -118,7 +116,7 @@ var genFloatAndDec *rapid.Generator = rapid.Custom(func(t *rapid.T) floatAndDec 
 
 // Property: n == NewDecFromInt64(n).Int64()
 func testDecInt64(t *rapid.T) {
-	nIn := rapid.Int64().Draw(t, "n").(int64)
+	nIn := rapid.Int64().Draw(t, "n")
 	nOut, err := NewDecFromInt64(nIn).Int64()
 
 	require.NoError(t, err)
@@ -127,30 +125,30 @@ func testDecInt64(t *rapid.T) {
 
 // Property: 0 + a == a
 func testAddLeftIdentity(t *rapid.T) {
-	a := genDec.Draw(t, "a").(Dec)
+	a := genDec.Draw(t, "a")
 	zero := NewDecFromInt64(0)
 
 	b, err := zero.Add(a)
 	require.NoError(t, err)
 
-	require.True(t, a.IsEqual(b))
+	require.True(t, a.Equal(b))
 }
 
 // Property: a + 0 == a
 func testAddRightIdentity(t *rapid.T) {
-	a := genDec.Draw(t, "a").(Dec)
+	a := genDec.Draw(t, "a")
 	zero := NewDecFromInt64(0)
 
 	b, err := a.Add(zero)
 	require.NoError(t, err)
 
-	require.True(t, a.IsEqual(b))
+	require.True(t, a.Equal(b))
 }
 
 // Property: a + b == b + a
 func testAddCommutative(t *rapid.T) {
-	a := genDec.Draw(t, "a").(Dec)
-	b := genDec.Draw(t, "b").(Dec)
+	a := genDec.Draw(t, "a")
+	b := genDec.Draw(t, "b")
 
 	c, err := a.Add(b)
 	require.NoError(t, err)
@@ -158,14 +156,14 @@ func testAddCommutative(t *rapid.T) {
 	d, err := b.Add(a)
 	require.NoError(t, err)
 
-	require.True(t, c.IsEqual(d))
+	require.True(t, c.Equal(d))
 }
 
 // Property: (a + b) + c == a + (b + c)
 func testAddAssociative(t *rapid.T) {
-	a := genDec.Draw(t, "a").(Dec)
-	b := genDec.Draw(t, "b").(Dec)
-	c := genDec.Draw(t, "c").(Dec)
+	a := genDec.Draw(t, "a")
+	b := genDec.Draw(t, "b")
+	c := genDec.Draw(t, "c")
 
 	// (a + b) + c
 	d, err := a.Add(b)
@@ -181,35 +179,35 @@ func testAddAssociative(t *rapid.T) {
 	g, err := a.Add(f)
 	require.NoError(t, err)
 
-	require.True(t, e.IsEqual(g))
+	require.True(t, e.Equal(g))
 }
 
 // Property: a - 0 == a
 func testSubRightIdentity(t *rapid.T) {
-	a := genDec.Draw(t, "a").(Dec)
+	a := genDec.Draw(t, "a")
 	zero := NewDecFromInt64(0)
 
 	b, err := a.Sub(zero)
 	require.NoError(t, err)
 
-	require.True(t, a.IsEqual(b))
+	require.True(t, a.Equal(b))
 }
 
 // Property: a - a == 0
 func testSubZero(t *rapid.T) {
-	a := genDec.Draw(t, "a").(Dec)
+	a := genDec.Draw(t, "a")
 	zero := NewDecFromInt64(0)
 
 	b, err := a.Sub(a)
 	require.NoError(t, err)
 
-	require.True(t, b.IsEqual(zero))
+	require.True(t, b.Equal(zero))
 }
 
 // Property: (a - b) + b == a
 func testSubAdd(t *rapid.T) {
-	a := genDec.Draw(t, "a").(Dec)
-	b := genDec.Draw(t, "b").(Dec)
+	a := genDec.Draw(t, "a")
+	b := genDec.Draw(t, "b")
 
 	c, err := a.Sub(b)
 	require.NoError(t, err)
@@ -217,13 +215,13 @@ func testSubAdd(t *rapid.T) {
 	d, err := c.Add(b)
 	require.NoError(t, err)
 
-	require.True(t, a.IsEqual(d))
+	require.True(t, a.Equal(d))
 }
 
 // Property: (a + b) - b == a
 func testAddSub(t *rapid.T) {
-	a := genDec.Draw(t, "a").(Dec)
-	b := genDec.Draw(t, "b").(Dec)
+	a := genDec.Draw(t, "a")
+	b := genDec.Draw(t, "b")
 
 	c, err := a.Add(b)
 	require.NoError(t, err)
@@ -231,67 +229,29 @@ func testAddSub(t *rapid.T) {
 	d, err := c.Sub(b)
 	require.NoError(t, err)
 
-	require.True(t, a.IsEqual(d))
+	require.True(t, a.Equal(d))
 }
 
 // Property: Cmp(a, b) == -Cmp(b, a)
 func testCmpInverse(t *rapid.T) {
-	a := genDec.Draw(t, "a").(Dec)
-	b := genDec.Draw(t, "b").(Dec)
+	a := genDec.Draw(t, "a")
+	b := genDec.Draw(t, "b")
 
 	require.Equal(t, a.Cmp(b), -b.Cmp(a))
 }
 
-// Property: IsEqual(a, b) == IsEqual(b, a)
+// Property: Equal(a, b) == Equal(b, a)
 func testEqualCommutative(t *rapid.T) {
-	a := genDec.Draw(t, "a").(Dec)
-	b := genDec.Draw(t, "b").(Dec)
+	a := genDec.Draw(t, "a")
+	b := genDec.Draw(t, "b")
 
-	require.Equal(t, a.IsEqual(b), b.IsEqual(a))
+	require.Equal(t, a.Equal(b), b.Equal(a))
 }
 
 // Property: isNegative(f) == isNegative(NewDecFromString(f.String()))
 func testIsNegative(t *rapid.T) {
-	floatAndDec := genFloatAndDec.Draw(t, "floatAndDec").(floatAndDec)
+	floatAndDec := genFloatAndDec.Draw(t, "floatAndDec")
 	f, dec := floatAndDec.float, floatAndDec.dec
 
 	require.Equal(t, f < 0, dec.IsNegative())
-}
-
-func floatDecimalPlaces(t *rapid.T, f float64) uint32 {
-	reScientific := regexp.MustCompile(`^\-?(?:[[:digit:]]+(?:\.([[:digit:]]+))?|\.([[:digit:]]+))(?:e?(?:\+?([[:digit:]]+)|(-[[:digit:]]+)))?$`)
-	fStr := fmt.Sprintf("%g", f)
-	matches := reScientific.FindAllStringSubmatch(fStr, 1)
-	if len(matches) != 1 {
-		t.Fatalf("Didn't match float: %g", f)
-	}
-
-	// basePlaces is the number of decimal places in the decimal part of the
-	// string
-	basePlaces := 0
-	if matches[0][1] != "" {
-		basePlaces = len(matches[0][1])
-	} else if matches[0][2] != "" {
-		basePlaces = len(matches[0][2])
-	}
-	t.Logf("Base places: %d", basePlaces)
-
-	// exp is the exponent
-	exp := 0
-	if matches[0][3] != "" {
-		var err error
-		exp, err = strconv.Atoi(matches[0][3])
-		require.NoError(t, err)
-	} else if matches[0][4] != "" {
-		var err error
-		exp, err = strconv.Atoi(matches[0][4])
-		require.NoError(t, err)
-	}
-
-	// Subtract exponent from base and check if negative
-	if res := basePlaces - exp; res <= 0 {
-		return 0
-	} else {
-		return uint32(res)
-	}
 }

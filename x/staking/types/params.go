@@ -7,11 +7,9 @@ import (
 	"time"
 
 	"cosmossdk.io/math"
-	"sigs.k8s.io/yaml"
 
 	"github.com/cosmos/cosmos-sdk/codec"
 	sdk "github.com/cosmos/cosmos-sdk/types"
-	paramtypes "github.com/cosmos/cosmos-sdk/x/params/types"
 )
 
 // Staking params default values
@@ -34,26 +32,10 @@ const (
 )
 
 // DefaultMinCommissionRate is set to 0%
-var DefaultMinCommissionRate = sdk.ZeroDec()
-
-var (
-	KeyUnbondingTime     = []byte("UnbondingTime")
-	KeyMaxValidators     = []byte("MaxValidators")
-	KeyMaxEntries        = []byte("MaxEntries")
-	KeyBondDenom         = []byte("BondDenom")
-	KeyHistoricalEntries = []byte("HistoricalEntries")
-	KeyMinCommissionRate = []byte("MinCommissionRate")
-)
-
-var _ paramtypes.ParamSet = (*Params)(nil)
-
-// ParamTable for staking module
-func ParamKeyTable() paramtypes.KeyTable {
-	return paramtypes.NewKeyTable().RegisterParamSet(&Params{})
-}
+var DefaultMinCommissionRate = math.LegacyZeroDec()
 
 // NewParams creates a new Params instance
-func NewParams(unbondingTime time.Duration, maxValidators, maxEntries, historicalEntries uint32, bondDenom string, minCommissionRate sdk.Dec) Params {
+func NewParams(unbondingTime time.Duration, maxValidators, maxEntries, historicalEntries uint32, bondDenom string, minCommissionRate math.LegacyDec) Params {
 	return Params{
 		UnbondingTime:     unbondingTime,
 		MaxValidators:     maxValidators,
@@ -61,18 +43,6 @@ func NewParams(unbondingTime time.Duration, maxValidators, maxEntries, historica
 		HistoricalEntries: historicalEntries,
 		BondDenom:         bondDenom,
 		MinCommissionRate: minCommissionRate,
-	}
-}
-
-// Implements params.ParamSet
-func (p *Params) ParamSetPairs() paramtypes.ParamSetPairs {
-	return paramtypes.ParamSetPairs{
-		paramtypes.NewParamSetPair(KeyUnbondingTime, &p.UnbondingTime, validateUnbondingTime),
-		paramtypes.NewParamSetPair(KeyMaxValidators, &p.MaxValidators, validateMaxValidators),
-		paramtypes.NewParamSetPair(KeyMaxEntries, &p.MaxEntries, validateMaxEntries),
-		paramtypes.NewParamSetPair(KeyHistoricalEntries, &p.HistoricalEntries, validateHistoricalEntries),
-		paramtypes.NewParamSetPair(KeyBondDenom, &p.BondDenom, validateBondDenom),
-		paramtypes.NewParamSetPair(KeyMinCommissionRate, &p.MinCommissionRate, validateMinCommissionRate),
 	}
 }
 
@@ -86,12 +56,6 @@ func DefaultParams() Params {
 		sdk.DefaultBondDenom,
 		DefaultMinCommissionRate,
 	)
-}
-
-// String returns a human readable string representation of the parameters.
-func (p Params) String() string {
-	out, _ := yaml.Marshal(p)
-	return string(out)
 }
 
 // unmarshal the current staking params value from store key or panic
@@ -133,6 +97,10 @@ func (p Params) Validate() error {
 	}
 
 	if err := validateMinCommissionRate(p.MinCommissionRate); err != nil {
+		return err
+	}
+
+	if err := validateHistoricalEntries(p.HistoricalEntries); err != nil {
 		return err
 	}
 
@@ -210,7 +178,7 @@ func ValidatePowerReduction(i interface{}) error {
 		return fmt.Errorf("invalid parameter type: %T", i)
 	}
 
-	if v.LT(sdk.NewInt(1)) {
+	if v.LT(math.NewInt(1)) {
 		return fmt.Errorf("power reduction cannot be lower than 1")
 	}
 
@@ -218,15 +186,18 @@ func ValidatePowerReduction(i interface{}) error {
 }
 
 func validateMinCommissionRate(i interface{}) error {
-	v, ok := i.(sdk.Dec)
+	v, ok := i.(math.LegacyDec)
 	if !ok {
 		return fmt.Errorf("invalid parameter type: %T", i)
 	}
 
+	if v.IsNil() {
+		return fmt.Errorf("minimum commission rate cannot be nil: %s", v)
+	}
 	if v.IsNegative() {
 		return fmt.Errorf("minimum commission rate cannot be negative: %s", v)
 	}
-	if v.GT(sdk.OneDec()) {
+	if v.GT(math.LegacyOneDec()) {
 		return fmt.Errorf("minimum commission rate cannot be greater than 100%%: %s", v)
 	}
 

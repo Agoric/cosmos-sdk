@@ -2,7 +2,6 @@ package v1beta1
 
 import (
 	"cosmossdk.io/math"
-	"sigs.k8s.io/yaml"
 
 	sdk "github.com/cosmos/cosmos-sdk/types"
 )
@@ -11,14 +10,14 @@ import (
 type ValidatorGovInfo struct {
 	Address             sdk.ValAddress      // address of the validator operator
 	BondedTokens        math.Int            // Power of a Validator
-	DelegatorShares     sdk.Dec             // Total outstanding delegator shares
-	DelegatorDeductions sdk.Dec             // Delegator deductions from validator's delegators voting independently
+	DelegatorShares     math.LegacyDec      // Total outstanding delegator shares
+	DelegatorDeductions math.LegacyDec      // Delegator deductions from validator's delegators voting independently
 	Vote                WeightedVoteOptions // Vote of the validator
 }
 
 // NewValidatorGovInfo creates a ValidatorGovInfo instance
 func NewValidatorGovInfo(address sdk.ValAddress, bondedTokens math.Int, delegatorShares,
-	delegatorDeductions sdk.Dec, options WeightedVoteOptions,
+	delegatorDeductions math.LegacyDec, options WeightedVoteOptions,
 ) ValidatorGovInfo {
 	return ValidatorGovInfo{
 		Address:             address,
@@ -40,7 +39,7 @@ func NewTallyResult(yes, abstain, no, noWithVeto math.Int) TallyResult {
 }
 
 // NewTallyResultFromMap creates a new TallyResult instance from a Option -> Dec map
-func NewTallyResultFromMap(results map[VoteOption]sdk.Dec) TallyResult {
+func NewTallyResultFromMap(results map[VoteOption]math.LegacyDec) TallyResult {
 	return NewTallyResult(
 		results[OptionYes].TruncateInt(),
 		results[OptionAbstain].TruncateInt(),
@@ -51,7 +50,7 @@ func NewTallyResultFromMap(results map[VoteOption]sdk.Dec) TallyResult {
 
 // EmptyTallyResult returns an empty TallyResult.
 func EmptyTallyResult() TallyResult {
-	return NewTallyResult(sdk.ZeroInt(), sdk.ZeroInt(), sdk.ZeroInt(), sdk.ZeroInt())
+	return NewTallyResult(math.ZeroInt(), math.ZeroInt(), math.ZeroInt(), math.ZeroInt())
 }
 
 // Equals returns if two proposals are equal.
@@ -60,10 +59,4 @@ func (tr TallyResult) Equals(comp TallyResult) bool {
 		tr.Abstain.Equal(comp.Abstain) &&
 		tr.No.Equal(comp.No) &&
 		tr.NoWithVeto.Equal(comp.NoWithVeto)
-}
-
-// String implements stringer interface
-func (tr TallyResult) String() string {
-	out, _ := yaml.Marshal(tr)
-	return string(out)
 }

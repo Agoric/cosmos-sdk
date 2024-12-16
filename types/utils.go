@@ -6,28 +6,17 @@ import (
 	"fmt"
 	"time"
 
-	dbm "github.com/tendermint/tm-db"
+	"cosmossdk.io/log"
 
 	"github.com/cosmos/cosmos-sdk/types/kv"
 )
-
-var (
-	// This is set at compile time. Could be cleveldb, defaults is goleveldb.
-	DBBackend = "" // Deprecated: Use tendermint config's DBBackend value instead.
-	backend   = dbm.GoLevelDBBackend
-)
-
-func init() {
-	if len(DBBackend) != 0 {
-		backend = dbm.BackendType(DBBackend)
-	}
-}
 
 // SortedJSON takes any JSON and returns it sorted by keys. Also, all white-spaces
 // are removed.
 // This method can be used to canonicalize JSON to be returned by GetSignBytes,
 // e.g. for the ledger integration.
 // If the passed JSON isn't valid it will return an error.
+// Deprecated: SortJSON was used for GetSignbytes, this is now automatic with amino signing
 func SortJSON(toSortJSON []byte) ([]byte, error) {
 	var c interface{}
 	err := json.Unmarshal(toSortJSON, &c)
@@ -43,6 +32,7 @@ func SortJSON(toSortJSON []byte) ([]byte, error) {
 
 // MustSortJSON is like SortJSON but panic if an error occurs, e.g., if
 // the passed JSON isn't valid.
+// Deprecated: SortJSON was used for GetSignbytes, this is now automatic with amino signing
 func MustSortJSON(toSortJSON []byte) []byte {
 	js, err := SortJSON(toSortJSON)
 	if err != nil {
@@ -73,30 +63,42 @@ const SortableTimeFormat = "2006-01-02T15:04:05.000000000"
 
 // Formats a time.Time into a []byte that can be sorted
 func FormatTimeBytes(t time.Time) []byte {
-	return []byte(t.UTC().Round(0).Format(SortableTimeFormat))
+	return []byte(FormatTimeString(t))
+}
+
+// Formats a time.Time into a string
+func FormatTimeString(t time.Time) string {
+	return t.UTC().Round(0).Format(SortableTimeFormat)
 }
 
 // Parses a []byte encoded using FormatTimeKey back into a time.Time
 func ParseTimeBytes(bz []byte) (time.Time, error) {
-	str := string(bz)
-	t, err := time.Parse(SortableTimeFormat, str)
-	if err != nil {
-		return t, err
-	}
-	return t.UTC().Round(0), nil
+	return ParseTime(bz)
 }
 
-// NewLevelDB instantiate a new LevelDB instance according to DBBackend.
-//
-// Deprecated: Use NewDB (from "github.com/tendermint/tm-db") instead. Suggested backendType is tendermint config's DBBackend value.
-func NewLevelDB(name, dir string) (db dbm.DB, err error) {
-	defer func() {
-		if r := recover(); r != nil {
-			err = fmt.Errorf("couldn't create db: %v", r)
-		}
-	}()
+// Parses an encoded type using FormatTimeKey back into a time.Time
+func ParseTime(t any) (time.Time, error) {
+	var (
+		result time.Time
+		err    error
+	)
 
-	return dbm.NewDB(name, backend, dir)
+	switch t := t.(type) {
+	case time.Time:
+		result, err = t, nil
+	case []byte:
+		result, err = time.Parse(SortableTimeFormat, string(t))
+	case string:
+		result, err = time.Parse(SortableTimeFormat, t)
+	default:
+		return time.Time{}, fmt.Errorf("unexpected type %T", t)
+	}
+
+	if err != nil {
+		return result, err
+	}
+
+	return result.UTC().Round(0), nil
 }
 
 // copy bytes
@@ -127,7 +129,7 @@ func AppendLengthPrefixedBytes(args ...[]byte) []byte {
 }
 
 // ParseLengthPrefixedBytes panics when store key length is not equal to the given length.
-func ParseLengthPrefixedBytes(key []byte, startIndex int, sliceLength int) ([]byte, int) {
+func ParseLengthPrefixedBytes(key []byte, startIndex, sliceLength int) ([]byte, int) {
 	neededLength := startIndex + sliceLength
 	endIndex := neededLength - 1
 	kv.AssertKeyAtLeastLength(key, neededLength)
@@ -136,14 +138,9 @@ func ParseLengthPrefixedBytes(key []byte, startIndex int, sliceLength int) ([]by
 	return byteSlice, endIndex
 }
 
-// SliceContains implements a generic function for checking if a slice contains
-// a certain value.
-func SliceContains[T comparable](elements []T, v T) bool {
-	for _, s := range elements {
-		if v == s {
-			return true
-		}
+// LogDeferred logs an error in a deferred function call if the returned error is non-nil.
+func LogDeferred(logger log.Logger, f func() error) {
+	if err := f(); err != nil {
+		logger.Error(err.Error())
 	}
-
-	return false
 }

@@ -4,15 +4,19 @@ import (
 	"reflect"
 	"testing"
 
-	"cosmossdk.io/math"
 	"github.com/stretchr/testify/require"
 	"github.com/stretchr/testify/suite"
-	tmproto "github.com/tendermint/tendermint/proto/tendermint/types"
+
+	"cosmossdk.io/math"
+	"cosmossdk.io/store/prefix"
+	storetypes "cosmossdk.io/store/types"
 
 	"github.com/cosmos/cosmos-sdk/baseapp"
-	"github.com/cosmos/cosmos-sdk/simapp"
-	"github.com/cosmos/cosmos-sdk/store/prefix"
+	"github.com/cosmos/cosmos-sdk/testutil"
 	sdk "github.com/cosmos/cosmos-sdk/types"
+	moduletestutil "github.com/cosmos/cosmos-sdk/types/module/testutil"
+	"github.com/cosmos/cosmos-sdk/x/params"
+	"github.com/cosmos/cosmos-sdk/x/params/keeper"
 	"github.com/cosmos/cosmos-sdk/x/params/types"
 	"github.com/cosmos/cosmos-sdk/x/params/types/proposal"
 )
@@ -20,18 +24,24 @@ import (
 type KeeperTestSuite struct {
 	suite.Suite
 
-	app *simapp.SimApp
-	ctx sdk.Context
-
-	queryClient proposal.QueryClient
+	ctx          sdk.Context
+	paramsKeeper keeper.Keeper
+	queryClient  proposal.QueryClient
 }
 
 func (suite *KeeperTestSuite) SetupTest() {
-	suite.app = simapp.Setup(suite.T(), false)
-	suite.ctx = suite.app.BaseApp.NewContext(false, tmproto.Header{})
+	encodingCfg := moduletestutil.MakeTestEncodingConfig(params.AppModuleBasic{})
+	key := storetypes.NewKVStoreKey(types.StoreKey)
+	tkey := storetypes.NewTransientStoreKey("params_transient_test")
 
-	queryHelper := baseapp.NewQueryServerTestHelper(suite.ctx, suite.app.InterfaceRegistry())
-	proposal.RegisterQueryServer(queryHelper, suite.app.ParamsKeeper)
+	suite.ctx = testutil.DefaultContext(key, tkey)
+	suite.paramsKeeper = keeper.NewKeeper(encodingCfg.Codec, encodingCfg.Amino, key, tkey)
+	suite.paramsKeeper.Subspace("bank")
+	suite.paramsKeeper.Subspace("staking")
+
+	queryHelper := baseapp.NewQueryServerTestHelper(suite.ctx, encodingCfg.InterfaceRegistry)
+	proposal.RegisterQueryServer(queryHelper, suite.paramsKeeper)
+
 	suite.queryClient = proposal.NewQueryClient(queryHelper)
 }
 
@@ -182,9 +192,9 @@ func TestSubspace(t *testing.T) {
 		{"uint16", uint16(1), uint16(0), new(uint16)},
 		{"uint32", uint32(1), uint32(0), new(uint32)},
 		{"uint64", uint64(1), uint64(0), new(uint64)},
-		{"int", sdk.NewInt(1), *new(math.Int), new(math.Int)},
-		{"uint", sdk.NewUint(1), *new(sdk.Uint), new(sdk.Uint)},
-		{"dec", sdk.NewDec(1), *new(sdk.Dec), new(sdk.Dec)},
+		{"int", math.NewInt(1), math.Int{}, new(math.Int)},
+		{"uint", math.NewUint(1), math.Uint{}, new(math.Uint)},
+		{"dec", math.LegacyNewDec(1), math.LegacyDec{}, new(math.LegacyDec)},
 		{"struct", s{1}, s{0}, new(s)},
 	}
 
@@ -197,9 +207,9 @@ func TestSubspace(t *testing.T) {
 		types.NewParamSetPair([]byte("uint16"), uint16(0), validateNoOp),
 		types.NewParamSetPair([]byte("uint32"), uint32(0), validateNoOp),
 		types.NewParamSetPair([]byte("uint64"), uint64(0), validateNoOp),
-		types.NewParamSetPair([]byte("int"), sdk.Int{}, validateNoOp),
-		types.NewParamSetPair([]byte("uint"), sdk.Uint{}, validateNoOp),
-		types.NewParamSetPair([]byte("dec"), sdk.Dec{}, validateNoOp),
+		types.NewParamSetPair([]byte("int"), math.Int{}, validateNoOp),
+		types.NewParamSetPair([]byte("uint"), math.Uint{}, validateNoOp),
+		types.NewParamSetPair([]byte("dec"), math.LegacyDec{}, validateNoOp),
 		types.NewParamSetPair([]byte("struct"), s{}, validateNoOp),
 	)
 

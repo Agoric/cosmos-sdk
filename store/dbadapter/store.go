@@ -3,11 +3,11 @@ package dbadapter
 import (
 	"io"
 
-	dbm "github.com/tendermint/tm-db"
+	dbm "github.com/cosmos/cosmos-db"
 
-	"github.com/cosmos/cosmos-sdk/store/cachekv"
-	"github.com/cosmos/cosmos-sdk/store/tracekv"
-	"github.com/cosmos/cosmos-sdk/store/types"
+	"cosmossdk.io/store/cachekv"
+	"cosmossdk.io/store/tracekv"
+	"cosmossdk.io/store/types"
 )
 
 // Wrapper type for dbm.Db with implementation of KVStore
@@ -38,6 +38,7 @@ func (dsa Store) Has(key []byte) bool {
 // Set wraps the underlying DB's Set method panicing on error.
 func (dsa Store) Set(key, value []byte) {
 	types.AssertValidKey(key)
+	types.AssertValidValue(value)
 	if err := dsa.DB.Set(key, value); err != nil {
 		panic(err)
 	}

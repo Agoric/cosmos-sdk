@@ -10,14 +10,14 @@ import (
 	"gotest.tools/v3/assert"
 	"pgregory.net/rapid"
 
-	"github.com/cosmos/cosmos-sdk/orm/encoding/ormkv"
-	"github.com/cosmos/cosmos-sdk/orm/internal/testpb"
-	"github.com/cosmos/cosmos-sdk/orm/internal/testutil"
+	"cosmossdk.io/orm/encoding/ormkv"
+	"cosmossdk.io/orm/internal/testpb"
+	"cosmossdk.io/orm/internal/testutil"
 )
 
 func TestPrimaryKeyCodec(t *testing.T) {
 	rapid.Check(t, func(t *rapid.T) {
-		keyCodec := testutil.TestKeyCodecGen(0, 5).Draw(t, "keyCodec").(testutil.TestKeyCodec)
+		keyCodec := testutil.TestKeyCodecGen(0, 5).Draw(t, "keyCodec")
 		pkCodec, err := ormkv.NewPrimaryKeyCodec(
 			keyCodec.Codec.Prefix(),
 			(&testpb.ExampleTable{}).ProtoReflect().Type(),
@@ -26,7 +26,7 @@ func TestPrimaryKeyCodec(t *testing.T) {
 		)
 		assert.NilError(t, err)
 		for i := 0; i < 100; i++ {
-			a := testutil.GenA.Draw(t, fmt.Sprintf("a%d", i)).(*testpb.ExampleTable)
+			a := testutil.GenA.Draw(t, fmt.Sprintf("a%d", i))
 			key := keyCodec.Codec.GetKeyValues(a.ProtoReflect())
 			pk1 := &ormkv.PrimaryKeyEntry{
 				TableName: aFullName,

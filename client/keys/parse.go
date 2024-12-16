@@ -2,15 +2,16 @@ package keys
 
 import (
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"strings"
 
 	"github.com/spf13/cobra"
-	"github.com/tendermint/tendermint/libs/cli"
 	"sigs.k8s.io/yaml"
 
+	"github.com/cosmos/cosmos-sdk/client/flags"
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	"github.com/cosmos/cosmos-sdk/types/bech32"
 )
@@ -97,7 +98,7 @@ func doParseKey(cmd *cobra.Command, config *sdk.Config, args []string) error {
 		return errors.New("couldn't parse empty input")
 	}
 
-	output, _ := cmd.Flags().GetString(cli.OutputFlag)
+	output, _ := cmd.Flags().GetString(flags.FlagOutput)
 	if !(runFromBech32(outstream, addr, output) || runFromHex(config, outstream, addr, output)) {
 		return errors.New("couldn't find valid bech32 nor hex data")
 	}
@@ -136,11 +137,11 @@ func displayParseKeyInfo(w io.Writer, stringer fmt.Stringer, output string) {
 	)
 
 	switch output {
-	case OutputFormatText:
+	case flags.OutputFormatText:
 		out, err = yaml.Marshal(&stringer)
 
-	case OutputFormatJSON:
-		out, err = KeysCdc.MarshalJSON(stringer)
+	case flags.OutputFormatJSON:
+		out, err = json.Marshal(&stringer)
 	}
 
 	if err != nil {

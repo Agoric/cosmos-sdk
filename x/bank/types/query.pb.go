@@ -10,9 +10,10 @@ import (
 	github_com_cosmos_cosmos_sdk_types "github.com/cosmos/cosmos-sdk/types"
 	types "github.com/cosmos/cosmos-sdk/types"
 	query "github.com/cosmos/cosmos-sdk/types/query"
-	_ "github.com/gogo/protobuf/gogoproto"
-	grpc1 "github.com/gogo/protobuf/grpc"
-	proto "github.com/gogo/protobuf/proto"
+	_ "github.com/cosmos/cosmos-sdk/types/tx/amino"
+	_ "github.com/cosmos/gogoproto/gogoproto"
+	grpc1 "github.com/cosmos/gogoproto/grpc"
+	proto "github.com/cosmos/gogoproto/proto"
 	_ "google.golang.org/genproto/googleapis/api/annotations"
 	grpc "google.golang.org/grpc"
 	codes "google.golang.org/grpc/codes"
@@ -126,6 +127,10 @@ type QueryAllBalancesRequest struct {
 	Address string `protobuf:"bytes,1,opt,name=address,proto3" json:"address,omitempty"`
 	// pagination defines an optional pagination for the request.
 	Pagination *query.PageRequest `protobuf:"bytes,2,opt,name=pagination,proto3" json:"pagination,omitempty"`
+	// resolve_denom is the flag to resolve the denom into a human-readable form from the metadata.
+	//
+	// Since: cosmos-sdk 0.50
+	ResolveDenom bool `protobuf:"varint,3,opt,name=resolve_denom,json=resolveDenom,proto3" json:"resolve_denom,omitempty"`
 }
 
 func (m *QueryAllBalancesRequest) Reset()         { *m = QueryAllBalancesRequest{} }
@@ -319,6 +324,99 @@ func (m *QuerySpendableBalancesResponse) GetPagination() *query.PageResponse {
 	return nil
 }
 
+// QuerySpendableBalanceByDenomRequest defines the gRPC request structure for
+// querying an account's spendable balance for a specific denom.
+//
+// Since: cosmos-sdk 0.47
+type QuerySpendableBalanceByDenomRequest struct {
+	// address is the address to query balances for.
+	Address string `protobuf:"bytes,1,opt,name=address,proto3" json:"address,omitempty"`
+	// denom is the coin denom to query balances for.
+	Denom string `protobuf:"bytes,2,opt,name=denom,proto3" json:"denom,omitempty"`
+}
+
+func (m *QuerySpendableBalanceByDenomRequest) Reset()         { *m = QuerySpendableBalanceByDenomRequest{} }
+func (m *QuerySpendableBalanceByDenomRequest) String() string { return proto.CompactTextString(m) }
+func (*QuerySpendableBalanceByDenomRequest) ProtoMessage()    {}
+func (*QuerySpendableBalanceByDenomRequest) Descriptor() ([]byte, []int) {
+	return fileDescriptor_9c6fc1939682df13, []int{6}
+}
+func (m *QuerySpendableBalanceByDenomRequest) XXX_Unmarshal(b []byte) error {
+	return m.Unmarshal(b)
+}
+func (m *QuerySpendableBalanceByDenomRequest) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
+	if deterministic {
+		return xxx_messageInfo_QuerySpendableBalanceByDenomRequest.Marshal(b, m, deterministic)
+	} else {
+		b = b[:cap(b)]
+		n, err := m.MarshalToSizedBuffer(b)
+		if err != nil {
+			return nil, err
+		}
+		return b[:n], nil
+	}
+}
+func (m *QuerySpendableBalanceByDenomRequest) XXX_Merge(src proto.Message) {
+	xxx_messageInfo_QuerySpendableBalanceByDenomRequest.Merge(m, src)
+}
+func (m *QuerySpendableBalanceByDenomRequest) XXX_Size() int {
+	return m.Size()
+}
+func (m *QuerySpendableBalanceByDenomRequest) XXX_DiscardUnknown() {
+	xxx_messageInfo_QuerySpendableBalanceByDenomRequest.DiscardUnknown(m)
+}
+
+var xxx_messageInfo_QuerySpendableBalanceByDenomRequest proto.InternalMessageInfo
+
+// QuerySpendableBalanceByDenomResponse defines the gRPC response structure for
+// querying an account's spendable balance for a specific denom.
+//
+// Since: cosmos-sdk 0.47
+type QuerySpendableBalanceByDenomResponse struct {
+	// balance is the balance of the coin.
+	Balance *types.Coin `protobuf:"bytes,1,opt,name=balance,proto3" json:"balance,omitempty"`
+}
+
+func (m *QuerySpendableBalanceByDenomResponse) Reset()         { *m = QuerySpendableBalanceByDenomResponse{} }
+func (m *QuerySpendableBalanceByDenomResponse) String() string { return proto.CompactTextString(m) }
+func (*QuerySpendableBalanceByDenomResponse) ProtoMessage()    {}
+func (*QuerySpendableBalanceByDenomResponse) Descriptor() ([]byte, []int) {
+	return fileDescriptor_9c6fc1939682df13, []int{7}
+}
+func (m *QuerySpendableBalanceByDenomResponse) XXX_Unmarshal(b []byte) error {
+	return m.Unmarshal(b)
+}
+func (m *QuerySpendableBalanceByDenomResponse) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
+	if deterministic {
+		return xxx_messageInfo_QuerySpendableBalanceByDenomResponse.Marshal(b, m, deterministic)
+	} else {
+		b = b[:cap(b)]
+		n, err := m.MarshalToSizedBuffer(b)
+		if err != nil {
+			return nil, err
+		}
+		return b[:n], nil
+	}
+}
+func (m *QuerySpendableBalanceByDenomResponse) XXX_Merge(src proto.Message) {
+	xxx_messageInfo_QuerySpendableBalanceByDenomResponse.Merge(m, src)
+}
+func (m *QuerySpendableBalanceByDenomResponse) XXX_Size() int {
+	return m.Size()
+}
+func (m *QuerySpendableBalanceByDenomResponse) XXX_DiscardUnknown() {
+	xxx_messageInfo_QuerySpendableBalanceByDenomResponse.DiscardUnknown(m)
+}
+
+var xxx_messageInfo_QuerySpendableBalanceByDenomResponse proto.InternalMessageInfo
+
+func (m *QuerySpendableBalanceByDenomResponse) GetBalance() *types.Coin {
+	if m != nil {
+		return m.Balance
+	}
+	return nil
+}
+
 // QueryTotalSupplyRequest is the request type for the Query/TotalSupply RPC
 // method.
 type QueryTotalSupplyRequest struct {
@@ -332,7 +430,7 @@ func (m *QueryTotalSupplyRequest) Reset()         { *m = QueryTotalSupplyRequest
 func (m *QueryTotalSupplyRequest) String() string { return proto.CompactTextString(m) }
 func (*QueryTotalSupplyRequest) ProtoMessage()    {}
 func (*QueryTotalSupplyRequest) Descriptor() ([]byte, []int) {
-	return fileDescriptor_9c6fc1939682df13, []int{6}
+	return fileDescriptor_9c6fc1939682df13, []int{8}
 }
 func (m *QueryTotalSupplyRequest) XXX_Unmarshal(b []byte) error {
 	return m.Unmarshal(b)
@@ -376,7 +474,7 @@ func (m *QueryTotalSupplyResponse) Reset()         { *m = QueryTotalSupplyRespon
 func (m *QueryTotalSupplyResponse) String() string { return proto.CompactTextString(m) }
 func (*QueryTotalSupplyResponse) ProtoMessage()    {}
 func (*QueryTotalSupplyResponse) Descriptor() ([]byte, []int) {
-	return fileDescriptor_9c6fc1939682df13, []int{7}
+	return fileDescriptor_9c6fc1939682df13, []int{9}
 }
 func (m *QueryTotalSupplyResponse) XXX_Unmarshal(b []byte) error {
 	return m.Unmarshal(b)
@@ -429,7 +527,7 @@ func (m *QuerySupplyOfRequest) Reset()         { *m = QuerySupplyOfRequest{} }
 func (m *QuerySupplyOfRequest) String() string { return proto.CompactTextString(m) }
 func (*QuerySupplyOfRequest) ProtoMessage()    {}
 func (*QuerySupplyOfRequest) Descriptor() ([]byte, []int) {
-	return fileDescriptor_9c6fc1939682df13, []int{8}
+	return fileDescriptor_9c6fc1939682df13, []int{10}
 }
 func (m *QuerySupplyOfRequest) XXX_Unmarshal(b []byte) error {
 	return m.Unmarshal(b)
@@ -475,7 +573,7 @@ func (m *QuerySupplyOfResponse) Reset()         { *m = QuerySupplyOfResponse{} }
 func (m *QuerySupplyOfResponse) String() string { return proto.CompactTextString(m) }
 func (*QuerySupplyOfResponse) ProtoMessage()    {}
 func (*QuerySupplyOfResponse) Descriptor() ([]byte, []int) {
-	return fileDescriptor_9c6fc1939682df13, []int{9}
+	return fileDescriptor_9c6fc1939682df13, []int{11}
 }
 func (m *QuerySupplyOfResponse) XXX_Unmarshal(b []byte) error {
 	return m.Unmarshal(b)
@@ -519,7 +617,7 @@ func (m *QueryParamsRequest) Reset()         { *m = QueryParamsRequest{} }
 func (m *QueryParamsRequest) String() string { return proto.CompactTextString(m) }
 func (*QueryParamsRequest) ProtoMessage()    {}
 func (*QueryParamsRequest) Descriptor() ([]byte, []int) {
-	return fileDescriptor_9c6fc1939682df13, []int{10}
+	return fileDescriptor_9c6fc1939682df13, []int{12}
 }
 func (m *QueryParamsRequest) XXX_Unmarshal(b []byte) error {
 	return m.Unmarshal(b)
@@ -550,6 +648,7 @@ var xxx_messageInfo_QueryParamsRequest proto.InternalMessageInfo
 
 // QueryParamsResponse defines the response type for querying x/bank parameters.
 type QueryParamsResponse struct {
+	// params provides the parameters of the bank module.
 	Params Params `protobuf:"bytes,1,opt,name=params,proto3" json:"params"`
 }
 
@@ -557,7 +656,7 @@ func (m *QueryParamsResponse) Reset()         { *m = QueryParamsResponse{} }
 func (m *QueryParamsResponse) String() string { return proto.CompactTextString(m) }
 func (*QueryParamsResponse) ProtoMessage()    {}
 func (*QueryParamsResponse) Descriptor() ([]byte, []int) {
-	return fileDescriptor_9c6fc1939682df13, []int{11}
+	return fileDescriptor_9c6fc1939682df13, []int{13}
 }
 func (m *QueryParamsResponse) XXX_Unmarshal(b []byte) error {
 	return m.Unmarshal(b)
@@ -603,7 +702,7 @@ func (m *QueryDenomsMetadataRequest) Reset()         { *m = QueryDenomsMetadataR
 func (m *QueryDenomsMetadataRequest) String() string { return proto.CompactTextString(m) }
 func (*QueryDenomsMetadataRequest) ProtoMessage()    {}
 func (*QueryDenomsMetadataRequest) Descriptor() ([]byte, []int) {
-	return fileDescriptor_9c6fc1939682df13, []int{12}
+	return fileDescriptor_9c6fc1939682df13, []int{14}
 }
 func (m *QueryDenomsMetadataRequest) XXX_Unmarshal(b []byte) error {
 	return m.Unmarshal(b)
@@ -652,7 +751,7 @@ func (m *QueryDenomsMetadataResponse) Reset()         { *m = QueryDenomsMetadata
 func (m *QueryDenomsMetadataResponse) String() string { return proto.CompactTextString(m) }
 func (*QueryDenomsMetadataResponse) ProtoMessage()    {}
 func (*QueryDenomsMetadataResponse) Descriptor() ([]byte, []int) {
-	return fileDescriptor_9c6fc1939682df13, []int{13}
+	return fileDescriptor_9c6fc1939682df13, []int{15}
 }
 func (m *QueryDenomsMetadataResponse) XXX_Unmarshal(b []byte) error {
 	return m.Unmarshal(b)
@@ -705,7 +804,7 @@ func (m *QueryDenomMetadataRequest) Reset()         { *m = QueryDenomMetadataReq
 func (m *QueryDenomMetadataRequest) String() string { return proto.CompactTextString(m) }
 func (*QueryDenomMetadataRequest) ProtoMessage()    {}
 func (*QueryDenomMetadataRequest) Descriptor() ([]byte, []int) {
-	return fileDescriptor_9c6fc1939682df13, []int{14}
+	return fileDescriptor_9c6fc1939682df13, []int{16}
 }
 func (m *QueryDenomMetadataRequest) XXX_Unmarshal(b []byte) error {
 	return m.Unmarshal(b)
@@ -752,7 +851,7 @@ func (m *QueryDenomMetadataResponse) Reset()         { *m = QueryDenomMetadataRe
 func (m *QueryDenomMetadataResponse) String() string { return proto.CompactTextString(m) }
 func (*QueryDenomMetadataResponse) ProtoMessage()    {}
 func (*QueryDenomMetadataResponse) Descriptor() ([]byte, []int) {
-	return fileDescriptor_9c6fc1939682df13, []int{15}
+	return fileDescriptor_9c6fc1939682df13, []int{17}
 }
 func (m *QueryDenomMetadataResponse) XXX_Unmarshal(b []byte) error {
 	return m.Unmarshal(b)
@@ -788,6 +887,104 @@ func (m *QueryDenomMetadataResponse) GetMetadata() Metadata {
 	return Metadata{}
 }
 
+// QueryDenomMetadataByQueryStringRequest is the request type for the Query/DenomMetadata RPC method.
+// Identical with QueryDenomMetadataRequest but receives denom as query string.
+type QueryDenomMetadataByQueryStringRequest struct {
+	// denom is the coin denom to query the metadata for.
+	Denom string `protobuf:"bytes,1,opt,name=denom,proto3" json:"denom,omitempty"`
+}
+
+func (m *QueryDenomMetadataByQueryStringRequest) Reset() {
+	*m = QueryDenomMetadataByQueryStringRequest{}
+}
+func (m *QueryDenomMetadataByQueryStringRequest) String() string { return proto.CompactTextString(m) }
+func (*QueryDenomMetadataByQueryStringRequest) ProtoMessage()    {}
+func (*QueryDenomMetadataByQueryStringRequest) Descriptor() ([]byte, []int) {
+	return fileDescriptor_9c6fc1939682df13, []int{18}
+}
+func (m *QueryDenomMetadataByQueryStringRequest) XXX_Unmarshal(b []byte) error {
+	return m.Unmarshal(b)
+}
+func (m *QueryDenomMetadataByQueryStringRequest) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
+	if deterministic {
+		return xxx_messageInfo_QueryDenomMetadataByQueryStringRequest.Marshal(b, m, deterministic)
+	} else {
+		b = b[:cap(b)]
+		n, err := m.MarshalToSizedBuffer(b)
+		if err != nil {
+			return nil, err
+		}
+		return b[:n], nil
+	}
+}
+func (m *QueryDenomMetadataByQueryStringRequest) XXX_Merge(src proto.Message) {
+	xxx_messageInfo_QueryDenomMetadataByQueryStringRequest.Merge(m, src)
+}
+func (m *QueryDenomMetadataByQueryStringRequest) XXX_Size() int {
+	return m.Size()
+}
+func (m *QueryDenomMetadataByQueryStringRequest) XXX_DiscardUnknown() {
+	xxx_messageInfo_QueryDenomMetadataByQueryStringRequest.DiscardUnknown(m)
+}
+
+var xxx_messageInfo_QueryDenomMetadataByQueryStringRequest proto.InternalMessageInfo
+
+func (m *QueryDenomMetadataByQueryStringRequest) GetDenom() string {
+	if m != nil {
+		return m.Denom
+	}
+	return ""
+}
+
+// QueryDenomMetadataByQueryStringResponse is the response type for the Query/DenomMetadata RPC
+// method. Identical with QueryDenomMetadataResponse but receives denom as query string in request.
+type QueryDenomMetadataByQueryStringResponse struct {
+	// metadata describes and provides all the client information for the requested token.
+	Metadata Metadata `protobuf:"bytes,1,opt,name=metadata,proto3" json:"metadata"`
+}
+
+func (m *QueryDenomMetadataByQueryStringResponse) Reset() {
+	*m = QueryDenomMetadataByQueryStringResponse{}
+}
+func (m *QueryDenomMetadataByQueryStringResponse) String() string { return proto.CompactTextString(m) }
+func (*QueryDenomMetadataByQueryStringResponse) ProtoMessage()    {}
+func (*QueryDenomMetadataByQueryStringResponse) Descriptor() ([]byte, []int) {
+	return fileDescriptor_9c6fc1939682df13, []int{19}
+}
+func (m *QueryDenomMetadataByQueryStringResponse) XXX_Unmarshal(b []byte) error {
+	return m.Unmarshal(b)
+}
+func (m *QueryDenomMetadataByQueryStringResponse) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
+	if deterministic {
+		return xxx_messageInfo_QueryDenomMetadataByQueryStringResponse.Marshal(b, m, deterministic)
+	} else {
+		b = b[:cap(b)]
+		n, err := m.MarshalToSizedBuffer(b)
+		if err != nil {
+			return nil, err
+		}
+		return b[:n], nil
+	}
+}
+func (m *QueryDenomMetadataByQueryStringResponse) XXX_Merge(src proto.Message) {
+	xxx_messageInfo_QueryDenomMetadataByQueryStringResponse.Merge(m, src)
+}
+func (m *QueryDenomMetadataByQueryStringResponse) XXX_Size() int {
+	return m.Size()
+}
+func (m *QueryDenomMetadataByQueryStringResponse) XXX_DiscardUnknown() {
+	xxx_messageInfo_QueryDenomMetadataByQueryStringResponse.DiscardUnknown(m)
+}
+
+var xxx_messageInfo_QueryDenomMetadataByQueryStringResponse proto.InternalMessageInfo
+
+func (m *QueryDenomMetadataByQueryStringResponse) GetMetadata() Metadata {
+	if m != nil {
+		return m.Metadata
+	}
+	return Metadata{}
+}
+
 // QueryDenomOwnersRequest defines the request type for the DenomOwners RPC query,
 // which queries for a paginated set of all account holders of a particular
 // denomination.
@@ -802,7 +999,7 @@ func (m *QueryDenomOwnersRequest) Reset()         { *m = QueryDenomOwnersRequest
 func (m *QueryDenomOwnersRequest) String() string { return proto.CompactTextString(m) }
 func (*QueryDenomOwnersRequest) ProtoMessage()    {}
 func (*QueryDenomOwnersRequest) Descriptor() ([]byte, []int) {
-	return fileDescriptor_9c6fc1939682df13, []int{16}
+	return fileDescriptor_9c6fc1939682df13, []int{20}
 }
 func (m *QueryDenomOwnersRequest) XXX_Unmarshal(b []byte) error {
 	return m.Unmarshal(b)
@@ -861,7 +1058,7 @@ func (m *DenomOwner) Reset()         { *m = DenomOwner{} }
 func (m *DenomOwner) String() string { return proto.CompactTextString(m) }
 func (*DenomOwner) ProtoMessage()    {}
 func (*DenomOwner) Descriptor() ([]byte, []int) {
-	return fileDescriptor_9c6fc1939682df13, []int{17}
+	return fileDescriptor_9c6fc1939682df13, []int{21}
 }
 func (m *DenomOwner) XXX_Unmarshal(b []byte) error {
 	return m.Unmarshal(b)
@@ -917,7 +1114,7 @@ func (m *QueryDenomOwnersResponse) Reset()         { *m = QueryDenomOwnersRespon
 func (m *QueryDenomOwnersResponse) String() string { return proto.CompactTextString(m) }
 func (*QueryDenomOwnersResponse) ProtoMessage()    {}
 func (*QueryDenomOwnersResponse) Descriptor() ([]byte, []int) {
-	return fileDescriptor_9c6fc1939682df13, []int{18}
+	return fileDescriptor_9c6fc1939682df13, []int{22}
 }
 func (m *QueryDenomOwnersResponse) XXX_Unmarshal(b []byte) error {
 	return m.Unmarshal(b)
@@ -960,6 +1157,236 @@ func (m *QueryDenomOwnersResponse) GetPagination() *query.PageResponse {
 	return nil
 }
 
+// QueryDenomOwnersByQueryRequest defines the request type for the DenomOwnersByQuery RPC query,
+// which queries for a paginated set of all account holders of a particular
+// denomination.
+//
+// Since: cosmos-sdk 0.50.3
+type QueryDenomOwnersByQueryRequest struct {
+	// denom defines the coin denomination to query all account holders for.
+	Denom string `protobuf:"bytes,1,opt,name=denom,proto3" json:"denom,omitempty"`
+	// pagination defines an optional pagination for the request.
+	Pagination *query.PageRequest `protobuf:"bytes,2,opt,name=pagination,proto3" json:"pagination,omitempty"`
+}
+
+func (m *QueryDenomOwnersByQueryRequest) Reset()         { *m = QueryDenomOwnersByQueryRequest{} }
+func (m *QueryDenomOwnersByQueryRequest) String() string { return proto.CompactTextString(m) }
+func (*QueryDenomOwnersByQueryRequest) ProtoMessage()    {}
+func (*QueryDenomOwnersByQueryRequest) Descriptor() ([]byte, []int) {
+	return fileDescriptor_9c6fc1939682df13, []int{23}
+}
+func (m *QueryDenomOwnersByQueryRequest) XXX_Unmarshal(b []byte) error {
+	return m.Unmarshal(b)
+}
+func (m *QueryDenomOwnersByQueryRequest) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
+	if deterministic {
+		return xxx_messageInfo_QueryDenomOwnersByQueryRequest.Marshal(b, m, deterministic)
+	} else {
+		b = b[:cap(b)]
+		n, err := m.MarshalToSizedBuffer(b)
+		if err != nil {
+			return nil, err
+		}
+		return b[:n], nil
+	}
+}
+func (m *QueryDenomOwnersByQueryRequest) XXX_Merge(src proto.Message) {
+	xxx_messageInfo_QueryDenomOwnersByQueryRequest.Merge(m, src)
+}
+func (m *QueryDenomOwnersByQueryRequest) XXX_Size() int {
+	return m.Size()
+}
+func (m *QueryDenomOwnersByQueryRequest) XXX_DiscardUnknown() {
+	xxx_messageInfo_QueryDenomOwnersByQueryRequest.DiscardUnknown(m)
+}
+
+var xxx_messageInfo_QueryDenomOwnersByQueryRequest proto.InternalMessageInfo
+
+func (m *QueryDenomOwnersByQueryRequest) GetDenom() string {
+	if m != nil {
+		return m.Denom
+	}
+	return ""
+}
+
+func (m *QueryDenomOwnersByQueryRequest) GetPagination() *query.PageRequest {
+	if m != nil {
+		return m.Pagination
+	}
+	return nil
+}
+
+// QueryDenomOwnersByQueryResponse defines the RPC response of a DenomOwnersByQuery RPC query.
+//
+// Since: cosmos-sdk 0.50.3
+type QueryDenomOwnersByQueryResponse struct {
+	DenomOwners []*DenomOwner `protobuf:"bytes,1,rep,name=denom_owners,json=denomOwners,proto3" json:"denom_owners,omitempty"`
+	// pagination defines the pagination in the response.
+	Pagination *query.PageResponse `protobuf:"bytes,2,opt,name=pagination,proto3" json:"pagination,omitempty"`
+}
+
+func (m *QueryDenomOwnersByQueryResponse) Reset()         { *m = QueryDenomOwnersByQueryResponse{} }
+func (m *QueryDenomOwnersByQueryResponse) String() string { return proto.CompactTextString(m) }
+func (*QueryDenomOwnersByQueryResponse) ProtoMessage()    {}
+func (*QueryDenomOwnersByQueryResponse) Descriptor() ([]byte, []int) {
+	return fileDescriptor_9c6fc1939682df13, []int{24}
+}
+func (m *QueryDenomOwnersByQueryResponse) XXX_Unmarshal(b []byte) error {
+	return m.Unmarshal(b)
+}
+func (m *QueryDenomOwnersByQueryResponse) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
+	if deterministic {
+		return xxx_messageInfo_QueryDenomOwnersByQueryResponse.Marshal(b, m, deterministic)
+	} else {
+		b = b[:cap(b)]
+		n, err := m.MarshalToSizedBuffer(b)
+		if err != nil {
+			return nil, err
+		}
+		return b[:n], nil
+	}
+}
+func (m *QueryDenomOwnersByQueryResponse) XXX_Merge(src proto.Message) {
+	xxx_messageInfo_QueryDenomOwnersByQueryResponse.Merge(m, src)
+}
+func (m *QueryDenomOwnersByQueryResponse) XXX_Size() int {
+	return m.Size()
+}
+func (m *QueryDenomOwnersByQueryResponse) XXX_DiscardUnknown() {
+	xxx_messageInfo_QueryDenomOwnersByQueryResponse.DiscardUnknown(m)
+}
+
+var xxx_messageInfo_QueryDenomOwnersByQueryResponse proto.InternalMessageInfo
+
+func (m *QueryDenomOwnersByQueryResponse) GetDenomOwners() []*DenomOwner {
+	if m != nil {
+		return m.DenomOwners
+	}
+	return nil
+}
+
+func (m *QueryDenomOwnersByQueryResponse) GetPagination() *query.PageResponse {
+	if m != nil {
+		return m.Pagination
+	}
+	return nil
+}
+
+// QuerySendEnabledRequest defines the RPC request for looking up SendEnabled entries.
+//
+// Since: cosmos-sdk 0.47
+type QuerySendEnabledRequest struct {
+	// denoms is the specific denoms you want look up. Leave empty to get all entries.
+	Denoms []string `protobuf:"bytes,1,rep,name=denoms,proto3" json:"denoms,omitempty"`
+	// pagination defines an optional pagination for the request. This field is
+	// only read if the denoms field is empty.
+	Pagination *query.PageRequest `protobuf:"bytes,99,opt,name=pagination,proto3" json:"pagination,omitempty"`
+}
+
+func (m *QuerySendEnabledRequest) Reset()         { *m = QuerySendEnabledRequest{} }
+func (m *QuerySendEnabledRequest) String() string { return proto.CompactTextString(m) }
+func (*QuerySendEnabledRequest) ProtoMessage()    {}
+func (*QuerySendEnabledRequest) Descriptor() ([]byte, []int) {
+	return fileDescriptor_9c6fc1939682df13, []int{25}
+}
+func (m *QuerySendEnabledRequest) XXX_Unmarshal(b []byte) error {
+	return m.Unmarshal(b)
+}
+func (m *QuerySendEnabledRequest) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
+	if deterministic {
+		return xxx_messageInfo_QuerySendEnabledRequest.Marshal(b, m, deterministic)
+	} else {
+		b = b[:cap(b)]
+		n, err := m.MarshalToSizedBuffer(b)
+		if err != nil {
+			return nil, err
+		}
+		return b[:n], nil
+	}
+}
+func (m *QuerySendEnabledRequest) XXX_Merge(src proto.Message) {
+	xxx_messageInfo_QuerySendEnabledRequest.Merge(m, src)
+}
+func (m *QuerySendEnabledRequest) XXX_Size() int {
+	return m.Size()
+}
+func (m *QuerySendEnabledRequest) XXX_DiscardUnknown() {
+	xxx_messageInfo_QuerySendEnabledRequest.DiscardUnknown(m)
+}
+
+var xxx_messageInfo_QuerySendEnabledRequest proto.InternalMessageInfo
+
+func (m *QuerySendEnabledRequest) GetDenoms() []string {
+	if m != nil {
+		return m.Denoms
+	}
+	return nil
+}
+
+func (m *QuerySendEnabledRequest) GetPagination() *query.PageRequest {
+	if m != nil {
+		return m.Pagination
+	}
+	return nil
+}
+
+// QuerySendEnabledResponse defines the RPC response of a SendEnable query.
+//
+// Since: cosmos-sdk 0.47
+type QuerySendEnabledResponse struct {
+	SendEnabled []*SendEnabled `protobuf:"bytes,1,rep,name=send_enabled,json=sendEnabled,proto3" json:"send_enabled,omitempty"`
+	// pagination defines the pagination in the response. This field is only
+	// populated if the denoms field in the request is empty.
+	Pagination *query.PageResponse `protobuf:"bytes,99,opt,name=pagination,proto3" json:"pagination,omitempty"`
+}
+
+func (m *QuerySendEnabledResponse) Reset()         { *m = QuerySendEnabledResponse{} }
+func (m *QuerySendEnabledResponse) String() string { return proto.CompactTextString(m) }
+func (*QuerySendEnabledResponse) ProtoMessage()    {}
+func (*QuerySendEnabledResponse) Descriptor() ([]byte, []int) {
+	return fileDescriptor_9c6fc1939682df13, []int{26}
+}
+func (m *QuerySendEnabledResponse) XXX_Unmarshal(b []byte) error {
+	return m.Unmarshal(b)
+}
+func (m *QuerySendEnabledResponse) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
+	if deterministic {
+		return xxx_messageInfo_QuerySendEnabledResponse.Marshal(b, m, deterministic)
+	} else {
+		b = b[:cap(b)]
+		n, err := m.MarshalToSizedBuffer(b)
+		if err != nil {
+			return nil, err
+		}
+		return b[:n], nil
+	}
+}
+func (m *QuerySendEnabledResponse) XXX_Merge(src proto.Message) {
+	xxx_messageInfo_QuerySendEnabledResponse.Merge(m, src)
+}
+func (m *QuerySendEnabledResponse) XXX_Size() int {
+	return m.Size()
+}
+func (m *QuerySendEnabledResponse) XXX_DiscardUnknown() {
+	xxx_messageInfo_QuerySendEnabledResponse.DiscardUnknown(m)
+}
+
+var xxx_messageInfo_QuerySendEnabledResponse proto.InternalMessageInfo
+
+func (m *QuerySendEnabledResponse) GetSendEnabled() []*SendEnabled {
+	if m != nil {
+		return m.SendEnabled
+	}
+	return nil
+}
+
+func (m *QuerySendEnabledResponse) GetPagination() *query.PageResponse {
+	if m != nil {
+		return m.Pagination
+	}
+	return nil
+}
+
 func init() {
 	proto.RegisterType((*QueryBalanceRequest)(nil), "cosmos.bank.v1beta1.QueryBalanceRequest")
 	proto.RegisterType((*QueryBalanceResponse)(nil), "cosmos.bank.v1beta1.QueryBalanceResponse")
@@ -967,6 +1394,8 @@ func init() {
 	proto.RegisterType((*QueryAllBalancesResponse)(nil), "cosmos.bank.v1beta1.QueryAllBalancesResponse")
 	proto.RegisterType((*QuerySpendableBalancesRequest)(nil), "cosmos.bank.v1beta1.QuerySpendableBalancesRequest")
 	proto.RegisterType((*QuerySpendableBalancesResponse)(nil), "cosmos.bank.v1beta1.QuerySpendableBalancesResponse")
+	proto.RegisterType((*QuerySpendableBalanceByDenomRequest)(nil), "cosmos.bank.v1beta1.QuerySpendableBalanceByDenomRequest")
+	proto.RegisterType((*QuerySpendableBalanceByDenomResponse)(nil), "cosmos.bank.v1beta1.QuerySpendableBalanceByDenomResponse")
 	proto.RegisterType((*QueryTotalSupplyRequest)(nil), "cosmos.bank.v1beta1.QueryTotalSupplyRequest")
 	proto.RegisterType((*QueryTotalSupplyResponse)(nil), "cosmos.bank.v1beta1.QueryTotalSupplyResponse")
 	proto.RegisterType((*QuerySupplyOfRequest)(nil), "cosmos.bank.v1beta1.QuerySupplyOfRequest")
@@ -977,78 +1406,105 @@ func init() {
 	proto.RegisterType((*QueryDenomsMetadataResponse)(nil), "cosmos.bank.v1beta1.QueryDenomsMetadataResponse")
 	proto.RegisterType((*QueryDenomMetadataRequest)(nil), "cosmos.bank.v1beta1.QueryDenomMetadataRequest")
 	proto.RegisterType((*QueryDenomMetadataResponse)(nil), "cosmos.bank.v1beta1.QueryDenomMetadataResponse")
+	proto.RegisterType((*QueryDenomMetadataByQueryStringRequest)(nil), "cosmos.bank.v1beta1.QueryDenomMetadataByQueryStringRequest")
+	proto.RegisterType((*QueryDenomMetadataByQueryStringResponse)(nil), "cosmos.bank.v1beta1.QueryDenomMetadataByQueryStringResponse")
 	proto.RegisterType((*QueryDenomOwnersRequest)(nil), "cosmos.bank.v1beta1.QueryDenomOwnersRequest")
 	proto.RegisterType((*DenomOwner)(nil), "cosmos.bank.v1beta1.DenomOwner")
 	proto.RegisterType((*QueryDenomOwnersResponse)(nil), "cosmos.bank.v1beta1.QueryDenomOwnersResponse")
+	proto.RegisterType((*QueryDenomOwnersByQueryRequest)(nil), "cosmos.bank.v1beta1.QueryDenomOwnersByQueryRequest")
+	proto.RegisterType((*QueryDenomOwnersByQueryResponse)(nil), "cosmos.bank.v1beta1.QueryDenomOwnersByQueryResponse")
+	proto.RegisterType((*QuerySendEnabledRequest)(nil), "cosmos.bank.v1beta1.QuerySendEnabledRequest")
+	proto.RegisterType((*QuerySendEnabledResponse)(nil), "cosmos.bank.v1beta1.QuerySendEnabledResponse")
 }
 
 func init() { proto.RegisterFile("cosmos/bank/v1beta1/query.proto", fileDescriptor_9c6fc1939682df13) }
 
 var fileDescriptor_9c6fc1939682df13 = []byte{
-	// 1008 bytes of a gzipped FileDescriptorProto
-	0x1f, 0x8b, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 0xff, 0xd4, 0x57, 0xbf, 0x6f, 0x23, 0x45,
-	0x14, 0xf6, 0x04, 0xce, 0xc9, 0x3d, 0x03, 0x12, 0x73, 0x46, 0x24, 0x1b, 0x62, 0xa3, 0x05, 0x5d,
-	0x92, 0x23, 0xd9, 0x8d, 0x1d, 0x24, 0x08, 0x0d, 0x8a, 0x0f, 0x41, 0x81, 0xd0, 0x05, 0x87, 0x0a,
-	0x09, 0x59, 0x63, 0x7b, 0x59, 0xac, 0xd8, 0x3b, 0x7b, 0x9e, 0x35, 0x47, 0x14, 0x9d, 0x84, 0xa8,
-	0xa8, 0x38, 0x24, 0x1a, 0x24, 0x84, 0x38, 0x0a, 0x40, 0x50, 0x23, 0xf1, 0x2f, 0xa4, 0xa0, 0x38,
-	0x1d, 0x0d, 0x15, 0xa0, 0x84, 0x82, 0x3f, 0x03, 0x79, 0xe6, 0x8d, 0xbd, 0x6b, 0x8f, 0x37, 0x0b,
-	0x18, 0x09, 0xaa, 0x78, 0x67, 0xde, 0x8f, 0xef, 0xfb, 0xe6, 0xcd, 0x7b, 0x13, 0x28, 0xb7, 0xb8,
-	0xe8, 0x71, 0xe1, 0x36, 0x59, 0x70, 0xe4, 0xbe, 0x5b, 0x69, 0x7a, 0x11, 0xab, 0xb8, 0x37, 0x07,
-	0x5e, 0xff, 0xd8, 0x09, 0xfb, 0x3c, 0xe2, 0xf4, 0x8a, 0x32, 0x70, 0x86, 0x06, 0x0e, 0x1a, 0x58,
-	0xd7, 0x46, 0x5e, 0xc2, 0x53, 0xd6, 0x23, 0xdf, 0x90, 0xf9, 0x9d, 0x80, 0x45, 0x1d, 0x1e, 0xa8,
-	0x00, 0x56, 0xd1, 0xe7, 0x3e, 0x97, 0x3f, 0xdd, 0xe1, 0x2f, 0x5c, 0x7d, 0xc2, 0xe7, 0xdc, 0xef,
-	0x7a, 0x2e, 0x0b, 0x3b, 0x2e, 0x0b, 0x02, 0x1e, 0x49, 0x17, 0x81, 0xbb, 0xa5, 0x78, 0x7c, 0x1d,
-	0xb9, 0xc5, 0x3b, 0xc1, 0xd4, 0x7e, 0x0c, 0xb5, 0x44, 0xa8, 0xf6, 0x57, 0xd4, 0x7e, 0x43, 0xa5,
-	0x45, 0x06, 0xf2, 0xc3, 0xee, 0xc0, 0x95, 0xd7, 0x87, 0x80, 0x6b, 0xac, 0xcb, 0x82, 0x96, 0x57,
-	0xf7, 0x6e, 0x0e, 0x3c, 0x11, 0xd1, 0x2a, 0x2c, 0xb2, 0x76, 0xbb, 0xef, 0x09, 0xb1, 0x4c, 0x9e,
-	0x24, 0x1b, 0x97, 0x6b, 0xcb, 0xf7, 0xbf, 0xdf, 0x2e, 0xa2, 0xe7, 0xbe, 0xda, 0x39, 0x8c, 0xfa,
-	0x9d, 0xc0, 0xaf, 0x6b, 0x43, 0x5a, 0x84, 0x4b, 0x6d, 0x2f, 0xe0, 0xbd, 0xe5, 0x85, 0xa1, 0x47,
-	0x5d, 0x7d, 0xbc, 0xb0, 0xf4, 0xe1, 0xdd, 0x72, 0xee, 0x8f, 0xbb, 0xe5, 0x9c, 0xfd, 0x2a, 0x14,
-	0x93, 0xa9, 0x44, 0xc8, 0x03, 0xe1, 0xd1, 0x5d, 0x58, 0x6c, 0xaa, 0x25, 0x99, 0xab, 0x50, 0x5d,
-	0x71, 0x46, 0x22, 0x0b, 0x4f, 0x8b, 0xec, 0x5c, 0xe7, 0x9d, 0xa0, 0xae, 0x2d, 0xed, 0x2f, 0x08,
-	0x3c, 0x2e, 0xa3, 0xed, 0x77, 0xbb, 0x18, 0x50, 0xfc, 0x13, 0xf0, 0x2f, 0x03, 0x8c, 0x8f, 0x4a,
-	0x32, 0x28, 0x54, 0xaf, 0x26, 0x70, 0xa8, 0x2a, 0xd0, 0x68, 0x0e, 0x98, 0xaf, 0xc5, 0xaa, 0xc7,
-	0x3c, 0x63, 0x74, 0x7f, 0x24, 0xb0, 0x3c, 0x8d, 0x10, 0x39, 0xfb, 0xb0, 0x84, 0x4c, 0x86, 0x18,
-	0x1f, 0x48, 0x25, 0x5d, 0xdb, 0x39, 0xfd, 0xa5, 0x9c, 0xfb, 0xee, 0xd7, 0xf2, 0x86, 0xdf, 0x89,
-	0xde, 0x19, 0x34, 0x9d, 0x16, 0xef, 0xe1, 0x21, 0xe2, 0x9f, 0x6d, 0xd1, 0x3e, 0x72, 0xa3, 0xe3,
-	0xd0, 0x13, 0xd2, 0x41, 0xd4, 0x47, 0xc1, 0xe9, 0x2b, 0x06, 0x5e, 0xeb, 0x17, 0xf2, 0x52, 0x28,
-	0xe3, 0xc4, 0xec, 0xaf, 0x08, 0xac, 0x49, 0x3a, 0x87, 0xa1, 0x17, 0xb4, 0x59, 0xb3, 0xeb, 0xfd,
-	0x37, 0x65, 0xbf, 0x4f, 0xa0, 0x34, 0x0b, 0xe7, 0xff, 0x56, 0xfc, 0x23, 0x2c, 0xf6, 0x37, 0x78,
-	0xc4, 0xba, 0x87, 0x83, 0x30, 0xec, 0x1e, 0x6b, 0xd5, 0x93, 0x0a, 0x92, 0x39, 0x28, 0x78, 0xaa,
-	0x0b, 0x37, 0x91, 0x0d, 0xb5, 0x6b, 0x41, 0x5e, 0xc8, 0x95, 0x7f, 0x43, 0x39, 0x0c, 0x3d, 0x3f,
-	0xdd, 0xb6, 0xb0, 0xe5, 0x28, 0x12, 0x37, 0xde, 0xd6, 0xa2, 0x8d, 0x5a, 0x15, 0x89, 0xb5, 0x2a,
-	0xfb, 0x00, 0x1e, 0x9b, 0xb0, 0x46, 0xd2, 0xcf, 0x41, 0x9e, 0xf5, 0xf8, 0x20, 0x88, 0x2e, 0x6c,
-	0x50, 0xb5, 0x07, 0x87, 0xa4, 0xeb, 0x68, 0x6e, 0x17, 0x81, 0xca, 0x88, 0x07, 0xac, 0xcf, 0x7a,
-	0xfa, 0xa2, 0xd8, 0x07, 0xd8, 0x73, 0xf5, 0x2a, 0x66, 0xd9, 0x83, 0x7c, 0x28, 0x57, 0x30, 0xcb,
-	0xaa, 0x63, 0x98, 0x35, 0x8e, 0x72, 0xd2, 0x79, 0x94, 0x83, 0xdd, 0x06, 0x4b, 0x46, 0x7c, 0x69,
-	0xc8, 0x43, 0xbc, 0xe6, 0x45, 0xac, 0xcd, 0x22, 0x36, 0xe7, 0x12, 0xb1, 0xbf, 0x25, 0xb0, 0x6a,
-	0x4c, 0x83, 0x04, 0xf6, 0xe1, 0x72, 0x0f, 0xd7, 0xf4, 0xc5, 0x5a, 0x33, 0x72, 0xd0, 0x9e, 0xc8,
-	0x62, 0xec, 0x35, 0xbf, 0x93, 0xaf, 0xc0, 0xca, 0x18, 0xea, 0xa4, 0x20, 0xe6, 0xe3, 0x7f, 0x2b,
-	0x2e, 0xe2, 0x14, 0xb9, 0x17, 0x61, 0x49, 0xc3, 0x44, 0x09, 0x33, 0x71, 0x1b, 0x39, 0xd9, 0xb7,
-	0xf0, 0x0e, 0xcb, 0xf0, 0x37, 0x6e, 0x05, 0x5e, 0x5f, 0xa4, 0xe2, 0x99, 0x57, 0x6f, 0xb4, 0x4f,
-	0x00, 0xc6, 0x39, 0xff, 0x56, 0x97, 0xde, 0x1b, 0x4f, 0xe8, 0x85, 0x6c, 0x17, 0x60, 0x34, 0xa7,
-	0xbf, 0xd1, 0xcd, 0x24, 0x41, 0x1b, 0x35, 0xad, 0xc1, 0x43, 0x92, 0x6a, 0x83, 0xcb, 0x75, 0xac,
-	0x99, 0xb2, 0x51, 0xd7, 0xb1, 0x7f, 0xbd, 0xd0, 0x1e, 0xc7, 0x9a, 0x5b, 0xc5, 0x54, 0x3f, 0x2a,
-	0xc0, 0x25, 0x89, 0x94, 0x7e, 0x4a, 0x60, 0x11, 0x87, 0x06, 0xdd, 0x30, 0x82, 0x31, 0x3c, 0x99,
-	0xac, 0xcd, 0x0c, 0x96, 0x2a, 0xad, 0xfd, 0xfc, 0x07, 0x3f, 0xfd, 0xfe, 0xc9, 0x42, 0x95, 0xee,
-	0xb8, 0xe6, 0x87, 0x9b, 0x1a, 0x1f, 0xee, 0x09, 0xea, 0x7f, 0xdb, 0x6d, 0x1e, 0x37, 0x54, 0x4d,
-	0x7c, 0x46, 0xa0, 0x10, 0x7b, 0x4f, 0xd0, 0xad, 0xd9, 0x49, 0xa7, 0x1f, 0x46, 0xd6, 0x76, 0x46,
-	0x6b, 0x84, 0xe9, 0x4a, 0x98, 0x9b, 0x74, 0x3d, 0x23, 0x4c, 0xfa, 0x03, 0x81, 0x47, 0xa7, 0xc6,
-	0x2e, 0xad, 0xce, 0xce, 0x3a, 0xeb, 0x2d, 0x61, 0xed, 0xfe, 0x25, 0x1f, 0xc4, 0xbb, 0x27, 0xf1,
-	0xee, 0xd2, 0x8a, 0x11, 0xaf, 0xd0, 0x7e, 0x0d, 0x03, 0xf2, 0x3b, 0x04, 0x0a, 0xb1, 0x71, 0x97,
-	0xa6, 0xeb, 0xf4, 0x0c, 0x4e, 0xd3, 0xd5, 0x30, 0x43, 0xed, 0xa7, 0x24, 0xce, 0x35, 0xba, 0x6a,
-	0xc6, 0xa9, 0x10, 0xdc, 0x21, 0xb0, 0xa4, 0x07, 0x11, 0x4d, 0xa9, 0xad, 0x89, 0xd1, 0x66, 0x5d,
-	0xcb, 0x62, 0x8a, 0x40, 0xb6, 0x24, 0x90, 0xab, 0xf4, 0xe9, 0x14, 0x20, 0xe3, 0xda, 0x7b, 0x9f,
-	0x40, 0x5e, 0x4d, 0x1f, 0xba, 0x3e, 0x3b, 0x49, 0x62, 0xd4, 0x59, 0x1b, 0x17, 0x1b, 0x66, 0x12,
-	0x45, 0xcd, 0x39, 0xfa, 0x35, 0x81, 0x87, 0x13, 0xed, 0x99, 0x3a, 0xb3, 0x13, 0x98, 0x5a, 0xbf,
-	0xe5, 0x66, 0xb6, 0x47, 0x5c, 0xcf, 0x4a, 0x5c, 0x0e, 0xdd, 0x32, 0xe2, 0x92, 0xca, 0x88, 0x86,
-	0x6e, 0xf2, 0xee, 0x89, 0x5c, 0xb8, 0x4d, 0xbf, 0x24, 0xf0, 0x48, 0x72, 0x4a, 0xd2, 0x8b, 0x32,
-	0x4f, 0x8e, 0x6d, 0x6b, 0x27, 0xbb, 0x43, 0xa6, 0xf3, 0x9c, 0xc0, 0x4a, 0x3f, 0x27, 0x50, 0x88,
-	0x75, 0xe5, 0xb4, 0x9a, 0x9f, 0x9e, 0x59, 0x69, 0x35, 0x6f, 0x68, 0xf5, 0x76, 0x45, 0x42, 0x7b,
-	0x86, 0x6e, 0xce, 0x86, 0x86, 0x53, 0x40, 0x6b, 0x58, 0xbb, 0x7e, 0x7a, 0x56, 0x22, 0xf7, 0xce,
-	0x4a, 0xe4, 0xb7, 0xb3, 0x12, 0xf9, 0xf8, 0xbc, 0x94, 0xbb, 0x77, 0x5e, 0xca, 0xfd, 0x7c, 0x5e,
-	0xca, 0xbd, 0xb9, 0x99, 0xfa, 0xa2, 0x7c, 0x4f, 0xc5, 0x96, 0x0f, 0xcb, 0x66, 0x5e, 0xfe, 0x9b,
-	0xbb, 0xfb, 0x67, 0x00, 0x00, 0x00, 0xff, 0xff, 0x8d, 0xb5, 0x9c, 0x3a, 0xd9, 0x0f, 0x00, 0x00,
+	// 1336 bytes of a gzipped FileDescriptorProto
+	0x1f, 0x8b, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 0xff, 0xdc, 0x58, 0x41, 0x6f, 0x1b, 0x45,
+	0x14, 0xf6, 0xa4, 0xaa, 0x93, 0x3c, 0xa7, 0x48, 0x99, 0x06, 0x9a, 0x6c, 0x88, 0x1d, 0x36, 0x55,
+	0xe2, 0x84, 0x64, 0xb7, 0x71, 0xa2, 0x42, 0x4b, 0x88, 0x14, 0xa7, 0xa4, 0x07, 0x84, 0x5a, 0x1c,
+	0x7a, 0x81, 0x83, 0xb5, 0xf6, 0x0e, 0xc6, 0x8a, 0xbd, 0xeb, 0x7a, 0x36, 0x2d, 0xab, 0x2a, 0x08,
+	0x21, 0x21, 0xf5, 0x88, 0x44, 0x4f, 0x95, 0x90, 0x22, 0x24, 0xa0, 0x02, 0xa9, 0xea, 0x81, 0x03,
+	0x07, 0x8e, 0x1c, 0x2a, 0x4e, 0x15, 0x1c, 0x40, 0x1c, 0x0a, 0x4a, 0x90, 0xda, 0x9f, 0x81, 0x3c,
+	0x33, 0xeb, 0xdd, 0xb5, 0xd7, 0xeb, 0x8d, 0x6b, 0xaa, 0xaa, 0x97, 0xc4, 0x9e, 0x79, 0x6f, 0xde,
+	0xf7, 0xbe, 0x79, 0xf3, 0xe6, 0x1b, 0x43, 0xaa, 0x68, 0xd2, 0xaa, 0x49, 0xd5, 0x82, 0x66, 0xec,
+	0xa8, 0xd7, 0x96, 0x0b, 0xc4, 0xd2, 0x96, 0xd5, 0xab, 0xbb, 0xa4, 0x6e, 0x2b, 0xb5, 0xba, 0x69,
+	0x99, 0xf8, 0x24, 0x37, 0x50, 0x1a, 0x06, 0x8a, 0x30, 0x90, 0x16, 0x9a, 0x5e, 0x94, 0x70, 0xeb,
+	0xa6, 0x6f, 0x4d, 0x2b, 0x95, 0x0d, 0xcd, 0x2a, 0x9b, 0x06, 0x5f, 0x40, 0x1a, 0x2b, 0x99, 0x25,
+	0x93, 0x7d, 0x54, 0x1b, 0x9f, 0xc4, 0xe8, 0xcb, 0x25, 0xd3, 0x2c, 0x55, 0x88, 0xaa, 0xd5, 0xca,
+	0xaa, 0x66, 0x18, 0xa6, 0xc5, 0x5c, 0xa8, 0x98, 0x4d, 0x7a, 0xd7, 0x77, 0x56, 0x2e, 0x9a, 0x65,
+	0xa3, 0x6d, 0xde, 0x83, 0x9a, 0x21, 0xe4, 0xf3, 0x13, 0x7c, 0x3e, 0xcf, 0xc3, 0x8a, 0x0c, 0xf8,
+	0xd4, 0xa4, 0x70, 0x75, 0x50, 0x7b, 0x93, 0x95, 0x46, 0xb5, 0x6a, 0xd9, 0x30, 0x55, 0xf6, 0x97,
+	0x0f, 0xc9, 0x65, 0x38, 0xf9, 0x6e, 0xc3, 0x22, 0xab, 0x55, 0x34, 0xa3, 0x48, 0x72, 0xe4, 0xea,
+	0x2e, 0xa1, 0x16, 0xce, 0xc0, 0xa0, 0xa6, 0xeb, 0x75, 0x42, 0xe9, 0x38, 0x9a, 0x46, 0xe9, 0xe1,
+	0xec, 0xf8, 0x6f, 0x3f, 0x2e, 0x8d, 0x89, 0x48, 0x1b, 0x7c, 0x66, 0xdb, 0xaa, 0x97, 0x8d, 0x52,
+	0xce, 0x31, 0xc4, 0x63, 0x70, 0x5c, 0x27, 0x86, 0x59, 0x1d, 0x1f, 0x68, 0x78, 0xe4, 0xf8, 0x97,
+	0xf3, 0x43, 0x37, 0xf7, 0x53, 0xb1, 0xc7, 0xfb, 0xa9, 0x98, 0xfc, 0x36, 0x8c, 0xf9, 0x43, 0xd1,
+	0x9a, 0x69, 0x50, 0x82, 0x57, 0x60, 0xb0, 0xc0, 0x87, 0x58, 0xac, 0x44, 0x66, 0x42, 0x69, 0x6e,
+	0x0a, 0x25, 0xce, 0xa6, 0x28, 0x9b, 0x66, 0xd9, 0xc8, 0x39, 0x96, 0xf2, 0x2f, 0x08, 0x4e, 0xb1,
+	0xd5, 0x36, 0x2a, 0x15, 0xb1, 0x20, 0x7d, 0x12, 0xf0, 0x5b, 0x00, 0xee, 0xd6, 0xb2, 0x0c, 0x12,
+	0x99, 0x59, 0x1f, 0x0e, 0x4e, 0xa4, 0x83, 0xe6, 0xb2, 0x56, 0x72, 0xc8, 0xca, 0x79, 0x3c, 0xf1,
+	0x0c, 0x9c, 0xa8, 0x13, 0x6a, 0x56, 0xae, 0x91, 0x3c, 0x27, 0xe3, 0xd8, 0x34, 0x4a, 0x0f, 0xe5,
+	0x46, 0xc4, 0xe0, 0x85, 0x16, 0x4e, 0x0e, 0x10, 0x8c, 0xb7, 0xa7, 0x21, 0x88, 0xd9, 0x83, 0x21,
+	0x91, 0x6e, 0x23, 0x91, 0x63, 0xa1, 0xcc, 0x64, 0xb7, 0xee, 0x3f, 0x4c, 0xc5, 0xbe, 0xff, 0x3b,
+	0x95, 0x2e, 0x95, 0xad, 0x8f, 0x76, 0x0b, 0x4a, 0xd1, 0xac, 0x8a, 0xca, 0x10, 0xff, 0x96, 0xa8,
+	0xbe, 0xa3, 0x5a, 0x76, 0x8d, 0x50, 0xe6, 0x40, 0x6f, 0x3f, 0xba, 0xb7, 0x30, 0x52, 0x21, 0x25,
+	0xad, 0x68, 0xe7, 0x1b, 0xb5, 0x47, 0xef, 0x3c, 0xba, 0xb7, 0x80, 0x72, 0xcd, 0x90, 0xf8, 0x62,
+	0x00, 0x25, 0x73, 0x5d, 0x29, 0xe1, 0xd8, 0xbd, 0x9c, 0xc8, 0xdf, 0x20, 0x98, 0x62, 0x49, 0x6e,
+	0xd7, 0x88, 0xa1, 0x6b, 0x85, 0x0a, 0x79, 0x86, 0x76, 0xcc, 0xb3, 0x19, 0x8f, 0x11, 0x24, 0x3b,
+	0xe1, 0x7c, 0xce, 0xb6, 0xc4, 0x86, 0x99, 0xc0, 0x4c, 0xb3, 0x36, 0xab, 0xd0, 0xff, 0xb3, 0x0d,
+	0x7c, 0x00, 0xa7, 0xc3, 0x43, 0x3f, 0x49, 0x5b, 0xd8, 0x11, 0x5d, 0xe1, 0x3d, 0xd3, 0xd2, 0x2a,
+	0xdb, 0xbb, 0xb5, 0x5a, 0xc5, 0x76, 0x72, 0xf1, 0xd7, 0x0b, 0xea, 0x43, 0xbd, 0x3c, 0x74, 0x0e,
+	0xaf, 0x2f, 0x9a, 0x80, 0x6f, 0x43, 0x9c, 0xb2, 0x91, 0xa7, 0x57, 0x27, 0x22, 0x60, 0xff, 0xaa,
+	0x64, 0x51, 0x74, 0x6c, 0x9e, 0xda, 0xa5, 0x0f, 0x1d, 0x2a, 0x9b, 0x5b, 0x8c, 0x3c, 0x5b, 0x2c,
+	0x5f, 0x81, 0x17, 0x5b, 0xac, 0x05, 0x15, 0x6b, 0x10, 0xd7, 0xaa, 0xe6, 0xae, 0x61, 0x75, 0xdd,
+	0xc8, 0xec, 0x70, 0x83, 0x0a, 0x91, 0x0d, 0xf7, 0x91, 0xc7, 0x00, 0xb3, 0x65, 0x2f, 0x6b, 0x75,
+	0xad, 0xea, 0x74, 0x0c, 0xf9, 0x8a, 0xb8, 0xb7, 0x9c, 0x51, 0x11, 0x6a, 0x1d, 0xe2, 0x35, 0x36,
+	0x22, 0x42, 0x4d, 0x2a, 0x01, 0xf7, 0xbb, 0xc2, 0x9d, 0x7c, 0xc1, 0xb8, 0x97, 0xac, 0x83, 0xc4,
+	0x96, 0x65, 0xa5, 0x48, 0xdf, 0x21, 0x96, 0xa6, 0x6b, 0x96, 0xd6, 0xe7, 0x12, 0x92, 0xef, 0x22,
+	0x98, 0x0c, 0x0c, 0x23, 0xb2, 0xd8, 0x82, 0xe1, 0xaa, 0x18, 0x73, 0xda, 0xcc, 0x54, 0x60, 0x22,
+	0x8e, 0xa7, 0x37, 0x15, 0xd7, 0xb5, 0x7f, 0x85, 0xb0, 0x0c, 0x13, 0x2e, 0xde, 0x56, 0x56, 0x82,
+	0xab, 0xa1, 0xe0, 0x65, 0xb2, 0x2d, 0xc3, 0x0b, 0x30, 0xe4, 0xc0, 0x14, 0x3c, 0x46, 0x4f, 0xb0,
+	0xe9, 0x29, 0xaf, 0xc3, 0x6c, 0x7b, 0x8c, 0xac, 0xcd, 0xab, 0x90, 0xb7, 0xa5, 0x50, 0x8c, 0x26,
+	0xcc, 0x75, 0xf5, 0xef, 0x2b, 0xe0, 0xeb, 0xa2, 0x3d, 0xb1, 0x80, 0x97, 0xae, 0x1b, 0xa4, 0x4e,
+	0x43, 0x11, 0xf6, 0xeb, 0x92, 0x93, 0x3f, 0x45, 0x00, 0x6e, 0xd0, 0x9e, 0xfa, 0xfa, 0xba, 0xdb,
+	0x8f, 0x07, 0x8e, 0x70, 0x8c, 0x9b, 0xad, 0xf9, 0x3b, 0xa7, 0x5b, 0xfa, 0x92, 0x17, 0xf4, 0x66,
+	0x61, 0x84, 0x25, 0x9c, 0x37, 0xd9, 0xb8, 0x28, 0xfa, 0x54, 0x20, 0xc5, 0xae, 0x7f, 0x2e, 0xa1,
+	0xbb, 0x6b, 0xf5, 0xaf, 0xda, 0x3f, 0x11, 0x32, 0xc0, 0x03, 0x54, 0x14, 0xc5, 0xd3, 0xd9, 0xac,
+	0xbb, 0x08, 0x52, 0x1d, 0x01, 0x3c, 0x8b, 0x84, 0xd9, 0xa2, 0xac, 0xb7, 0x89, 0xa1, 0xbf, 0x65,
+	0x34, 0xee, 0x74, 0xdd, 0x61, 0xea, 0x25, 0x88, 0xb3, 0x90, 0x1c, 0xe1, 0x70, 0x4e, 0x7c, 0x6b,
+	0xe1, 0xaa, 0xd8, 0x33, 0x57, 0x77, 0x9c, 0xaa, 0xf2, 0xc5, 0x16, 0x24, 0x6d, 0xc2, 0x08, 0x25,
+	0x86, 0x9e, 0x27, 0x7c, 0x5c, 0x90, 0x34, 0x1d, 0x48, 0x92, 0xd7, 0x3f, 0x41, 0xdd, 0x2f, 0x2d,
+	0x2c, 0x15, 0x7b, 0x66, 0x29, 0xf3, 0xeb, 0x28, 0x1c, 0x67, 0x50, 0xf1, 0x57, 0x08, 0x06, 0x85,
+	0xea, 0xc1, 0xe9, 0x40, 0x34, 0x01, 0x6f, 0x32, 0x69, 0x3e, 0x82, 0x25, 0x0f, 0x2b, 0xbf, 0x79,
+	0xb3, 0x71, 0xf6, 0x3e, 0xfb, 0xfd, 0xdf, 0x2f, 0x07, 0x32, 0xf8, 0x8c, 0x1a, 0xfc, 0x9c, 0xe4,
+	0x9a, 0x52, 0xbd, 0x21, 0x0e, 0xf8, 0x9e, 0x5a, 0xb0, 0xf9, 0x9b, 0x05, 0xef, 0x23, 0x48, 0x78,
+	0x1e, 0x24, 0x78, 0xb1, 0x73, 0xe4, 0xf6, 0xe7, 0x97, 0xb4, 0x14, 0xd1, 0x5a, 0x60, 0x5d, 0x75,
+	0xb1, 0xce, 0xe3, 0xb9, 0x88, 0x58, 0xf1, 0xcf, 0x08, 0x46, 0xdb, 0x64, 0x3a, 0xce, 0x74, 0x0e,
+	0xdd, 0xe9, 0xed, 0x21, 0xad, 0x1c, 0xc9, 0x47, 0x80, 0x5e, 0x77, 0x41, 0xaf, 0xe0, 0xe5, 0x40,
+	0xd0, 0xd4, 0x71, 0xce, 0x07, 0xc0, 0xff, 0x03, 0xc1, 0xa9, 0x0e, 0x02, 0x18, 0xbf, 0x1e, 0x1d,
+	0x90, 0x5f, 0xae, 0x4b, 0xe7, 0x7a, 0xf0, 0x14, 0x09, 0x5d, 0x74, 0x13, 0x5a, 0xc3, 0xe7, 0x8f,
+	0x9c, 0x90, 0x5b, 0x3b, 0xb7, 0x10, 0x24, 0x3c, 0x7a, 0x38, 0xac, 0x76, 0xda, 0x45, 0x7a, 0x58,
+	0xed, 0x04, 0x88, 0x6c, 0x39, 0xed, 0xa2, 0x9e, 0xc2, 0x93, 0xc1, 0xa8, 0x39, 0x8c, 0x5b, 0x08,
+	0x86, 0x1c, 0x61, 0x8a, 0x43, 0x4e, 0x52, 0x8b, 0xd4, 0x95, 0x16, 0xa2, 0x98, 0x0a, 0x34, 0xcb,
+	0x2e, 0x9a, 0x59, 0x7c, 0x3a, 0x04, 0x8d, 0xcb, 0xd6, 0xe7, 0x08, 0xe2, 0x5c, 0x8d, 0xe2, 0xb9,
+	0xce, 0x91, 0x7c, 0xd2, 0x57, 0x4a, 0x77, 0x37, 0x8c, 0x4e, 0x0f, 0xd7, 0xbd, 0xf8, 0x07, 0x04,
+	0x27, 0x7c, 0x2a, 0x08, 0x2b, 0x9d, 0xa3, 0x04, 0xa9, 0x40, 0x49, 0x8d, 0x6c, 0x2f, 0xc0, 0x9d,
+	0x73, 0xc1, 0x29, 0x78, 0x31, 0x10, 0x1c, 0xbf, 0x2b, 0xf2, 0x8e, 0x7c, 0x52, 0x6f, 0xb0, 0x81,
+	0x3d, 0xfc, 0x17, 0x02, 0xa9, 0xb3, 0x66, 0xc3, 0x6f, 0x44, 0x84, 0x12, 0xa4, 0x14, 0xa5, 0xb5,
+	0xde, 0x9c, 0x45, 0x52, 0x1b, 0x6e, 0x52, 0x67, 0xf1, 0x6a, 0x94, 0xa4, 0xf2, 0x05, 0x3b, 0xcf,
+	0x2e, 0x90, 0x3c, 0xe5, 0xe8, 0xbf, 0x45, 0xf0, 0x82, 0xff, 0x5d, 0x80, 0xbb, 0x71, 0xdb, 0xfa,
+	0x50, 0x91, 0xce, 0x44, 0x77, 0x88, 0x5e, 0xbb, 0x2d, 0xc0, 0xf1, 0xd7, 0x08, 0x12, 0x1e, 0x85,
+	0x12, 0x76, 0xd2, 0xdb, 0xf5, 0x6e, 0xd8, 0x49, 0x0f, 0x10, 0x88, 0xf2, 0x59, 0x17, 0xdf, 0xab,
+	0x78, 0xbe, 0x33, 0x3e, 0xa1, 0x87, 0x9a, 0xa5, 0xf2, 0x13, 0x02, 0xdc, 0x2e, 0xa3, 0xf0, 0x4a,
+	0xa4, 0xe8, 0x7e, 0xd5, 0x27, 0xad, 0x1e, 0xcd, 0x49, 0x20, 0x7f, 0xcd, 0x45, 0xbe, 0x88, 0x17,
+	0xba, 0x22, 0x6f, 0xd6, 0x03, 0xbe, 0x8d, 0x20, 0xe1, 0x51, 0x25, 0x61, 0xfc, 0xb6, 0x0b, 0xaf,
+	0x30, 0x7e, 0x03, 0xa4, 0x92, 0xac, 0xb8, 0x28, 0x67, 0xf0, 0x2b, 0xc1, 0xbd, 0xcb, 0x23, 0xa5,
+	0xb2, 0x9b, 0xf7, 0x0f, 0x92, 0xe8, 0xc1, 0x41, 0x12, 0xfd, 0x73, 0x90, 0x44, 0x5f, 0x1c, 0x26,
+	0x63, 0x0f, 0x0e, 0x93, 0xb1, 0x3f, 0x0f, 0x93, 0xb1, 0xf7, 0xe7, 0x43, 0x7f, 0xc5, 0xf8, 0x98,
+	0xaf, 0xc9, 0x7e, 0xcc, 0x28, 0xc4, 0xd9, 0x6f, 0xd0, 0x2b, 0xff, 0x05, 0x00, 0x00, 0xff, 0xff,
+	0x46, 0x5f, 0xc6, 0x98, 0xa6, 0x17, 0x00, 0x00,
 }
 
 // Reference imports to suppress errors if they are not otherwise used.
@@ -1066,28 +1522,66 @@ type QueryClient interface {
 	// Balance queries the balance of a single coin for a single account.
 	Balance(ctx context.Context, in *QueryBalanceRequest, opts ...grpc.CallOption) (*QueryBalanceResponse, error)
 	// AllBalances queries the balance of all coins for a single account.
+	//
+	// When called from another module, this query might consume a high amount of
+	// gas if the pagination field is incorrectly set.
 	AllBalances(ctx context.Context, in *QueryAllBalancesRequest, opts ...grpc.CallOption) (*QueryAllBalancesResponse, error)
-	// SpendableBalances queries the spenable balance of all coins for a single
+	// SpendableBalances queries the spendable balance of all coins for a single
 	// account.
+	//
+	// When called from another module, this query might consume a high amount of
+	// gas if the pagination field is incorrectly set.
 	//
 	// Since: cosmos-sdk 0.46
 	SpendableBalances(ctx context.Context, in *QuerySpendableBalancesRequest, opts ...grpc.CallOption) (*QuerySpendableBalancesResponse, error)
+	// SpendableBalanceByDenom queries the spendable balance of a single denom for
+	// a single account.
+	//
+	// When called from another module, this query might consume a high amount of
+	// gas if the pagination field is incorrectly set.
+	//
+	// Since: cosmos-sdk 0.47
+	SpendableBalanceByDenom(ctx context.Context, in *QuerySpendableBalanceByDenomRequest, opts ...grpc.CallOption) (*QuerySpendableBalanceByDenomResponse, error)
 	// TotalSupply queries the total supply of all coins.
+	//
+	// When called from another module, this query might consume a high amount of
+	// gas if the pagination field is incorrectly set.
 	TotalSupply(ctx context.Context, in *QueryTotalSupplyRequest, opts ...grpc.CallOption) (*QueryTotalSupplyResponse, error)
 	// SupplyOf queries the supply of a single coin.
+	//
+	// When called from another module, this query might consume a high amount of
+	// gas if the pagination field is incorrectly set.
 	SupplyOf(ctx context.Context, in *QuerySupplyOfRequest, opts ...grpc.CallOption) (*QuerySupplyOfResponse, error)
 	// Params queries the parameters of x/bank module.
 	Params(ctx context.Context, in *QueryParamsRequest, opts ...grpc.CallOption) (*QueryParamsResponse, error)
-	// DenomsMetadata queries the client metadata of a given coin denomination.
+	// DenomMetadata queries the client metadata of a given coin denomination.
 	DenomMetadata(ctx context.Context, in *QueryDenomMetadataRequest, opts ...grpc.CallOption) (*QueryDenomMetadataResponse, error)
+	// DenomMetadataByQueryString queries the client metadata of a given coin denomination.
+	DenomMetadataByQueryString(ctx context.Context, in *QueryDenomMetadataByQueryStringRequest, opts ...grpc.CallOption) (*QueryDenomMetadataByQueryStringResponse, error)
 	// DenomsMetadata queries the client metadata for all registered coin
 	// denominations.
 	DenomsMetadata(ctx context.Context, in *QueryDenomsMetadataRequest, opts ...grpc.CallOption) (*QueryDenomsMetadataResponse, error)
 	// DenomOwners queries for all account addresses that own a particular token
 	// denomination.
 	//
+	// When called from another module, this query might consume a high amount of
+	// gas if the pagination field is incorrectly set.
+	//
 	// Since: cosmos-sdk 0.46
 	DenomOwners(ctx context.Context, in *QueryDenomOwnersRequest, opts ...grpc.CallOption) (*QueryDenomOwnersResponse, error)
+	// DenomOwnersByQuery queries for all account addresses that own a particular token
+	// denomination.
+	//
+	// Since: cosmos-sdk 0.50.3
+	DenomOwnersByQuery(ctx context.Context, in *QueryDenomOwnersByQueryRequest, opts ...grpc.CallOption) (*QueryDenomOwnersByQueryResponse, error)
+	// SendEnabled queries for SendEnabled entries.
+	//
+	// This query only returns denominations that have specific SendEnabled settings.
+	// Any denomination that does not have a specific setting will use the default
+	// params.default_send_enabled, and will not be returned by this query.
+	//
+	// Since: cosmos-sdk 0.47
+	SendEnabled(ctx context.Context, in *QuerySendEnabledRequest, opts ...grpc.CallOption) (*QuerySendEnabledResponse, error)
 }
 
 type queryClient struct {
@@ -1119,6 +1613,15 @@ func (c *queryClient) AllBalances(ctx context.Context, in *QueryAllBalancesReque
 func (c *queryClient) SpendableBalances(ctx context.Context, in *QuerySpendableBalancesRequest, opts ...grpc.CallOption) (*QuerySpendableBalancesResponse, error) {
 	out := new(QuerySpendableBalancesResponse)
 	err := c.cc.Invoke(ctx, "/cosmos.bank.v1beta1.Query/SpendableBalances", in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *queryClient) SpendableBalanceByDenom(ctx context.Context, in *QuerySpendableBalanceByDenomRequest, opts ...grpc.CallOption) (*QuerySpendableBalanceByDenomResponse, error) {
+	out := new(QuerySpendableBalanceByDenomResponse)
+	err := c.cc.Invoke(ctx, "/cosmos.bank.v1beta1.Query/SpendableBalanceByDenom", in, out, opts...)
 	if err != nil {
 		return nil, err
 	}
@@ -1161,6 +1664,15 @@ func (c *queryClient) DenomMetadata(ctx context.Context, in *QueryDenomMetadataR
 	return out, nil
 }
 
+func (c *queryClient) DenomMetadataByQueryString(ctx context.Context, in *QueryDenomMetadataByQueryStringRequest, opts ...grpc.CallOption) (*QueryDenomMetadataByQueryStringResponse, error) {
+	out := new(QueryDenomMetadataByQueryStringResponse)
+	err := c.cc.Invoke(ctx, "/cosmos.bank.v1beta1.Query/DenomMetadataByQueryString", in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *queryClient) DenomsMetadata(ctx context.Context, in *QueryDenomsMetadataRequest, opts ...grpc.CallOption) (*QueryDenomsMetadataResponse, error) {
 	out := new(QueryDenomsMetadataResponse)
 	err := c.cc.Invoke(ctx, "/cosmos.bank.v1beta1.Query/DenomsMetadata", in, out, opts...)
@@ -1179,33 +1691,89 @@ func (c *queryClient) DenomOwners(ctx context.Context, in *QueryDenomOwnersReque
 	return out, nil
 }
 
+func (c *queryClient) DenomOwnersByQuery(ctx context.Context, in *QueryDenomOwnersByQueryRequest, opts ...grpc.CallOption) (*QueryDenomOwnersByQueryResponse, error) {
+	out := new(QueryDenomOwnersByQueryResponse)
+	err := c.cc.Invoke(ctx, "/cosmos.bank.v1beta1.Query/DenomOwnersByQuery", in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *queryClient) SendEnabled(ctx context.Context, in *QuerySendEnabledRequest, opts ...grpc.CallOption) (*QuerySendEnabledResponse, error) {
+	out := new(QuerySendEnabledResponse)
+	err := c.cc.Invoke(ctx, "/cosmos.bank.v1beta1.Query/SendEnabled", in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // QueryServer is the server API for Query service.
 type QueryServer interface {
 	// Balance queries the balance of a single coin for a single account.
 	Balance(context.Context, *QueryBalanceRequest) (*QueryBalanceResponse, error)
 	// AllBalances queries the balance of all coins for a single account.
+	//
+	// When called from another module, this query might consume a high amount of
+	// gas if the pagination field is incorrectly set.
 	AllBalances(context.Context, *QueryAllBalancesRequest) (*QueryAllBalancesResponse, error)
-	// SpendableBalances queries the spenable balance of all coins for a single
+	// SpendableBalances queries the spendable balance of all coins for a single
 	// account.
+	//
+	// When called from another module, this query might consume a high amount of
+	// gas if the pagination field is incorrectly set.
 	//
 	// Since: cosmos-sdk 0.46
 	SpendableBalances(context.Context, *QuerySpendableBalancesRequest) (*QuerySpendableBalancesResponse, error)
+	// SpendableBalanceByDenom queries the spendable balance of a single denom for
+	// a single account.
+	//
+	// When called from another module, this query might consume a high amount of
+	// gas if the pagination field is incorrectly set.
+	//
+	// Since: cosmos-sdk 0.47
+	SpendableBalanceByDenom(context.Context, *QuerySpendableBalanceByDenomRequest) (*QuerySpendableBalanceByDenomResponse, error)
 	// TotalSupply queries the total supply of all coins.
+	//
+	// When called from another module, this query might consume a high amount of
+	// gas if the pagination field is incorrectly set.
 	TotalSupply(context.Context, *QueryTotalSupplyRequest) (*QueryTotalSupplyResponse, error)
 	// SupplyOf queries the supply of a single coin.
+	//
+	// When called from another module, this query might consume a high amount of
+	// gas if the pagination field is incorrectly set.
 	SupplyOf(context.Context, *QuerySupplyOfRequest) (*QuerySupplyOfResponse, error)
 	// Params queries the parameters of x/bank module.
 	Params(context.Context, *QueryParamsRequest) (*QueryParamsResponse, error)
-	// DenomsMetadata queries the client metadata of a given coin denomination.
+	// DenomMetadata queries the client metadata of a given coin denomination.
 	DenomMetadata(context.Context, *QueryDenomMetadataRequest) (*QueryDenomMetadataResponse, error)
+	// DenomMetadataByQueryString queries the client metadata of a given coin denomination.
+	DenomMetadataByQueryString(context.Context, *QueryDenomMetadataByQueryStringRequest) (*QueryDenomMetadataByQueryStringResponse, error)
 	// DenomsMetadata queries the client metadata for all registered coin
 	// denominations.
 	DenomsMetadata(context.Context, *QueryDenomsMetadataRequest) (*QueryDenomsMetadataResponse, error)
 	// DenomOwners queries for all account addresses that own a particular token
 	// denomination.
 	//
+	// When called from another module, this query might consume a high amount of
+	// gas if the pagination field is incorrectly set.
+	//
 	// Since: cosmos-sdk 0.46
 	DenomOwners(context.Context, *QueryDenomOwnersRequest) (*QueryDenomOwnersResponse, error)
+	// DenomOwnersByQuery queries for all account addresses that own a particular token
+	// denomination.
+	//
+	// Since: cosmos-sdk 0.50.3
+	DenomOwnersByQuery(context.Context, *QueryDenomOwnersByQueryRequest) (*QueryDenomOwnersByQueryResponse, error)
+	// SendEnabled queries for SendEnabled entries.
+	//
+	// This query only returns denominations that have specific SendEnabled settings.
+	// Any denomination that does not have a specific setting will use the default
+	// params.default_send_enabled, and will not be returned by this query.
+	//
+	// Since: cosmos-sdk 0.47
+	SendEnabled(context.Context, *QuerySendEnabledRequest) (*QuerySendEnabledResponse, error)
 }
 
 // UnimplementedQueryServer can be embedded to have forward compatible implementations.
@@ -1221,6 +1789,9 @@ func (*UnimplementedQueryServer) AllBalances(ctx context.Context, req *QueryAllB
 func (*UnimplementedQueryServer) SpendableBalances(ctx context.Context, req *QuerySpendableBalancesRequest) (*QuerySpendableBalancesResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method SpendableBalances not implemented")
 }
+func (*UnimplementedQueryServer) SpendableBalanceByDenom(ctx context.Context, req *QuerySpendableBalanceByDenomRequest) (*QuerySpendableBalanceByDenomResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method SpendableBalanceByDenom not implemented")
+}
 func (*UnimplementedQueryServer) TotalSupply(ctx context.Context, req *QueryTotalSupplyRequest) (*QueryTotalSupplyResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method TotalSupply not implemented")
 }
@@ -1233,11 +1804,20 @@ func (*UnimplementedQueryServer) Params(ctx context.Context, req *QueryParamsReq
 func (*UnimplementedQueryServer) DenomMetadata(ctx context.Context, req *QueryDenomMetadataRequest) (*QueryDenomMetadataResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method DenomMetadata not implemented")
 }
+func (*UnimplementedQueryServer) DenomMetadataByQueryString(ctx context.Context, req *QueryDenomMetadataByQueryStringRequest) (*QueryDenomMetadataByQueryStringResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method DenomMetadataByQueryString not implemented")
+}
 func (*UnimplementedQueryServer) DenomsMetadata(ctx context.Context, req *QueryDenomsMetadataRequest) (*QueryDenomsMetadataResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method DenomsMetadata not implemented")
 }
 func (*UnimplementedQueryServer) DenomOwners(ctx context.Context, req *QueryDenomOwnersRequest) (*QueryDenomOwnersResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method DenomOwners not implemented")
+}
+func (*UnimplementedQueryServer) DenomOwnersByQuery(ctx context.Context, req *QueryDenomOwnersByQueryRequest) (*QueryDenomOwnersByQueryResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method DenomOwnersByQuery not implemented")
+}
+func (*UnimplementedQueryServer) SendEnabled(ctx context.Context, req *QuerySendEnabledRequest) (*QuerySendEnabledResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method SendEnabled not implemented")
 }
 
 func RegisterQueryServer(s grpc1.Server, srv QueryServer) {
@@ -1294,6 +1874,24 @@ func _Query_SpendableBalances_Handler(srv interface{}, ctx context.Context, dec 
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(QueryServer).SpendableBalances(ctx, req.(*QuerySpendableBalancesRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Query_SpendableBalanceByDenom_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(QuerySpendableBalanceByDenomRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(QueryServer).SpendableBalanceByDenom(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/cosmos.bank.v1beta1.Query/SpendableBalanceByDenom",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(QueryServer).SpendableBalanceByDenom(ctx, req.(*QuerySpendableBalanceByDenomRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -1370,6 +1968,24 @@ func _Query_DenomMetadata_Handler(srv interface{}, ctx context.Context, dec func
 	return interceptor(ctx, in, info, handler)
 }
 
+func _Query_DenomMetadataByQueryString_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(QueryDenomMetadataByQueryStringRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(QueryServer).DenomMetadataByQueryString(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/cosmos.bank.v1beta1.Query/DenomMetadataByQueryString",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(QueryServer).DenomMetadataByQueryString(ctx, req.(*QueryDenomMetadataByQueryStringRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _Query_DenomsMetadata_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(QueryDenomsMetadataRequest)
 	if err := dec(in); err != nil {
@@ -1406,6 +2022,42 @@ func _Query_DenomOwners_Handler(srv interface{}, ctx context.Context, dec func(i
 	return interceptor(ctx, in, info, handler)
 }
 
+func _Query_DenomOwnersByQuery_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(QueryDenomOwnersByQueryRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(QueryServer).DenomOwnersByQuery(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/cosmos.bank.v1beta1.Query/DenomOwnersByQuery",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(QueryServer).DenomOwnersByQuery(ctx, req.(*QueryDenomOwnersByQueryRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Query_SendEnabled_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(QuerySendEnabledRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(QueryServer).SendEnabled(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/cosmos.bank.v1beta1.Query/SendEnabled",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(QueryServer).SendEnabled(ctx, req.(*QuerySendEnabledRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 var _Query_serviceDesc = grpc.ServiceDesc{
 	ServiceName: "cosmos.bank.v1beta1.Query",
 	HandlerType: (*QueryServer)(nil),
@@ -1421,6 +2073,10 @@ var _Query_serviceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "SpendableBalances",
 			Handler:    _Query_SpendableBalances_Handler,
+		},
+		{
+			MethodName: "SpendableBalanceByDenom",
+			Handler:    _Query_SpendableBalanceByDenom_Handler,
 		},
 		{
 			MethodName: "TotalSupply",
@@ -1439,12 +2095,24 @@ var _Query_serviceDesc = grpc.ServiceDesc{
 			Handler:    _Query_DenomMetadata_Handler,
 		},
 		{
+			MethodName: "DenomMetadataByQueryString",
+			Handler:    _Query_DenomMetadataByQueryString_Handler,
+		},
+		{
 			MethodName: "DenomsMetadata",
 			Handler:    _Query_DenomsMetadata_Handler,
 		},
 		{
 			MethodName: "DenomOwners",
 			Handler:    _Query_DenomOwners_Handler,
+		},
+		{
+			MethodName: "DenomOwnersByQuery",
+			Handler:    _Query_DenomOwnersByQuery_Handler,
+		},
+		{
+			MethodName: "SendEnabled",
+			Handler:    _Query_SendEnabled_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},
@@ -1543,6 +2211,16 @@ func (m *QueryAllBalancesRequest) MarshalToSizedBuffer(dAtA []byte) (int, error)
 	_ = i
 	var l int
 	_ = l
+	if m.ResolveDenom {
+		i--
+		if m.ResolveDenom {
+			dAtA[i] = 1
+		} else {
+			dAtA[i] = 0
+		}
+		i--
+		dAtA[i] = 0x18
+	}
 	if m.Pagination != nil {
 		{
 			size, err := m.Pagination.MarshalToSizedBuffer(dAtA[:i])
@@ -1701,6 +2379,78 @@ func (m *QuerySpendableBalancesResponse) MarshalToSizedBuffer(dAtA []byte) (int,
 			i--
 			dAtA[i] = 0xa
 		}
+	}
+	return len(dAtA) - i, nil
+}
+
+func (m *QuerySpendableBalanceByDenomRequest) Marshal() (dAtA []byte, err error) {
+	size := m.Size()
+	dAtA = make([]byte, size)
+	n, err := m.MarshalToSizedBuffer(dAtA[:size])
+	if err != nil {
+		return nil, err
+	}
+	return dAtA[:n], nil
+}
+
+func (m *QuerySpendableBalanceByDenomRequest) MarshalTo(dAtA []byte) (int, error) {
+	size := m.Size()
+	return m.MarshalToSizedBuffer(dAtA[:size])
+}
+
+func (m *QuerySpendableBalanceByDenomRequest) MarshalToSizedBuffer(dAtA []byte) (int, error) {
+	i := len(dAtA)
+	_ = i
+	var l int
+	_ = l
+	if len(m.Denom) > 0 {
+		i -= len(m.Denom)
+		copy(dAtA[i:], m.Denom)
+		i = encodeVarintQuery(dAtA, i, uint64(len(m.Denom)))
+		i--
+		dAtA[i] = 0x12
+	}
+	if len(m.Address) > 0 {
+		i -= len(m.Address)
+		copy(dAtA[i:], m.Address)
+		i = encodeVarintQuery(dAtA, i, uint64(len(m.Address)))
+		i--
+		dAtA[i] = 0xa
+	}
+	return len(dAtA) - i, nil
+}
+
+func (m *QuerySpendableBalanceByDenomResponse) Marshal() (dAtA []byte, err error) {
+	size := m.Size()
+	dAtA = make([]byte, size)
+	n, err := m.MarshalToSizedBuffer(dAtA[:size])
+	if err != nil {
+		return nil, err
+	}
+	return dAtA[:n], nil
+}
+
+func (m *QuerySpendableBalanceByDenomResponse) MarshalTo(dAtA []byte) (int, error) {
+	size := m.Size()
+	return m.MarshalToSizedBuffer(dAtA[:size])
+}
+
+func (m *QuerySpendableBalanceByDenomResponse) MarshalToSizedBuffer(dAtA []byte) (int, error) {
+	i := len(dAtA)
+	_ = i
+	var l int
+	_ = l
+	if m.Balance != nil {
+		{
+			size, err := m.Balance.MarshalToSizedBuffer(dAtA[:i])
+			if err != nil {
+				return 0, err
+			}
+			i -= size
+			i = encodeVarintQuery(dAtA, i, uint64(size))
+		}
+		i--
+		dAtA[i] = 0xa
 	}
 	return len(dAtA) - i, nil
 }
@@ -2055,6 +2805,69 @@ func (m *QueryDenomMetadataResponse) MarshalToSizedBuffer(dAtA []byte) (int, err
 	return len(dAtA) - i, nil
 }
 
+func (m *QueryDenomMetadataByQueryStringRequest) Marshal() (dAtA []byte, err error) {
+	size := m.Size()
+	dAtA = make([]byte, size)
+	n, err := m.MarshalToSizedBuffer(dAtA[:size])
+	if err != nil {
+		return nil, err
+	}
+	return dAtA[:n], nil
+}
+
+func (m *QueryDenomMetadataByQueryStringRequest) MarshalTo(dAtA []byte) (int, error) {
+	size := m.Size()
+	return m.MarshalToSizedBuffer(dAtA[:size])
+}
+
+func (m *QueryDenomMetadataByQueryStringRequest) MarshalToSizedBuffer(dAtA []byte) (int, error) {
+	i := len(dAtA)
+	_ = i
+	var l int
+	_ = l
+	if len(m.Denom) > 0 {
+		i -= len(m.Denom)
+		copy(dAtA[i:], m.Denom)
+		i = encodeVarintQuery(dAtA, i, uint64(len(m.Denom)))
+		i--
+		dAtA[i] = 0xa
+	}
+	return len(dAtA) - i, nil
+}
+
+func (m *QueryDenomMetadataByQueryStringResponse) Marshal() (dAtA []byte, err error) {
+	size := m.Size()
+	dAtA = make([]byte, size)
+	n, err := m.MarshalToSizedBuffer(dAtA[:size])
+	if err != nil {
+		return nil, err
+	}
+	return dAtA[:n], nil
+}
+
+func (m *QueryDenomMetadataByQueryStringResponse) MarshalTo(dAtA []byte) (int, error) {
+	size := m.Size()
+	return m.MarshalToSizedBuffer(dAtA[:size])
+}
+
+func (m *QueryDenomMetadataByQueryStringResponse) MarshalToSizedBuffer(dAtA []byte) (int, error) {
+	i := len(dAtA)
+	_ = i
+	var l int
+	_ = l
+	{
+		size, err := m.Metadata.MarshalToSizedBuffer(dAtA[:i])
+		if err != nil {
+			return 0, err
+		}
+		i -= size
+		i = encodeVarintQuery(dAtA, i, uint64(size))
+	}
+	i--
+	dAtA[i] = 0xa
+	return len(dAtA) - i, nil
+}
+
 func (m *QueryDenomOwnersRequest) Marshal() (dAtA []byte, err error) {
 	size := m.Size()
 	dAtA = make([]byte, size)
@@ -2186,6 +2999,194 @@ func (m *QueryDenomOwnersResponse) MarshalToSizedBuffer(dAtA []byte) (int, error
 	return len(dAtA) - i, nil
 }
 
+func (m *QueryDenomOwnersByQueryRequest) Marshal() (dAtA []byte, err error) {
+	size := m.Size()
+	dAtA = make([]byte, size)
+	n, err := m.MarshalToSizedBuffer(dAtA[:size])
+	if err != nil {
+		return nil, err
+	}
+	return dAtA[:n], nil
+}
+
+func (m *QueryDenomOwnersByQueryRequest) MarshalTo(dAtA []byte) (int, error) {
+	size := m.Size()
+	return m.MarshalToSizedBuffer(dAtA[:size])
+}
+
+func (m *QueryDenomOwnersByQueryRequest) MarshalToSizedBuffer(dAtA []byte) (int, error) {
+	i := len(dAtA)
+	_ = i
+	var l int
+	_ = l
+	if m.Pagination != nil {
+		{
+			size, err := m.Pagination.MarshalToSizedBuffer(dAtA[:i])
+			if err != nil {
+				return 0, err
+			}
+			i -= size
+			i = encodeVarintQuery(dAtA, i, uint64(size))
+		}
+		i--
+		dAtA[i] = 0x12
+	}
+	if len(m.Denom) > 0 {
+		i -= len(m.Denom)
+		copy(dAtA[i:], m.Denom)
+		i = encodeVarintQuery(dAtA, i, uint64(len(m.Denom)))
+		i--
+		dAtA[i] = 0xa
+	}
+	return len(dAtA) - i, nil
+}
+
+func (m *QueryDenomOwnersByQueryResponse) Marshal() (dAtA []byte, err error) {
+	size := m.Size()
+	dAtA = make([]byte, size)
+	n, err := m.MarshalToSizedBuffer(dAtA[:size])
+	if err != nil {
+		return nil, err
+	}
+	return dAtA[:n], nil
+}
+
+func (m *QueryDenomOwnersByQueryResponse) MarshalTo(dAtA []byte) (int, error) {
+	size := m.Size()
+	return m.MarshalToSizedBuffer(dAtA[:size])
+}
+
+func (m *QueryDenomOwnersByQueryResponse) MarshalToSizedBuffer(dAtA []byte) (int, error) {
+	i := len(dAtA)
+	_ = i
+	var l int
+	_ = l
+	if m.Pagination != nil {
+		{
+			size, err := m.Pagination.MarshalToSizedBuffer(dAtA[:i])
+			if err != nil {
+				return 0, err
+			}
+			i -= size
+			i = encodeVarintQuery(dAtA, i, uint64(size))
+		}
+		i--
+		dAtA[i] = 0x12
+	}
+	if len(m.DenomOwners) > 0 {
+		for iNdEx := len(m.DenomOwners) - 1; iNdEx >= 0; iNdEx-- {
+			{
+				size, err := m.DenomOwners[iNdEx].MarshalToSizedBuffer(dAtA[:i])
+				if err != nil {
+					return 0, err
+				}
+				i -= size
+				i = encodeVarintQuery(dAtA, i, uint64(size))
+			}
+			i--
+			dAtA[i] = 0xa
+		}
+	}
+	return len(dAtA) - i, nil
+}
+
+func (m *QuerySendEnabledRequest) Marshal() (dAtA []byte, err error) {
+	size := m.Size()
+	dAtA = make([]byte, size)
+	n, err := m.MarshalToSizedBuffer(dAtA[:size])
+	if err != nil {
+		return nil, err
+	}
+	return dAtA[:n], nil
+}
+
+func (m *QuerySendEnabledRequest) MarshalTo(dAtA []byte) (int, error) {
+	size := m.Size()
+	return m.MarshalToSizedBuffer(dAtA[:size])
+}
+
+func (m *QuerySendEnabledRequest) MarshalToSizedBuffer(dAtA []byte) (int, error) {
+	i := len(dAtA)
+	_ = i
+	var l int
+	_ = l
+	if m.Pagination != nil {
+		{
+			size, err := m.Pagination.MarshalToSizedBuffer(dAtA[:i])
+			if err != nil {
+				return 0, err
+			}
+			i -= size
+			i = encodeVarintQuery(dAtA, i, uint64(size))
+		}
+		i--
+		dAtA[i] = 0x6
+		i--
+		dAtA[i] = 0x9a
+	}
+	if len(m.Denoms) > 0 {
+		for iNdEx := len(m.Denoms) - 1; iNdEx >= 0; iNdEx-- {
+			i -= len(m.Denoms[iNdEx])
+			copy(dAtA[i:], m.Denoms[iNdEx])
+			i = encodeVarintQuery(dAtA, i, uint64(len(m.Denoms[iNdEx])))
+			i--
+			dAtA[i] = 0xa
+		}
+	}
+	return len(dAtA) - i, nil
+}
+
+func (m *QuerySendEnabledResponse) Marshal() (dAtA []byte, err error) {
+	size := m.Size()
+	dAtA = make([]byte, size)
+	n, err := m.MarshalToSizedBuffer(dAtA[:size])
+	if err != nil {
+		return nil, err
+	}
+	return dAtA[:n], nil
+}
+
+func (m *QuerySendEnabledResponse) MarshalTo(dAtA []byte) (int, error) {
+	size := m.Size()
+	return m.MarshalToSizedBuffer(dAtA[:size])
+}
+
+func (m *QuerySendEnabledResponse) MarshalToSizedBuffer(dAtA []byte) (int, error) {
+	i := len(dAtA)
+	_ = i
+	var l int
+	_ = l
+	if m.Pagination != nil {
+		{
+			size, err := m.Pagination.MarshalToSizedBuffer(dAtA[:i])
+			if err != nil {
+				return 0, err
+			}
+			i -= size
+			i = encodeVarintQuery(dAtA, i, uint64(size))
+		}
+		i--
+		dAtA[i] = 0x6
+		i--
+		dAtA[i] = 0x9a
+	}
+	if len(m.SendEnabled) > 0 {
+		for iNdEx := len(m.SendEnabled) - 1; iNdEx >= 0; iNdEx-- {
+			{
+				size, err := m.SendEnabled[iNdEx].MarshalToSizedBuffer(dAtA[:i])
+				if err != nil {
+					return 0, err
+				}
+				i -= size
+				i = encodeVarintQuery(dAtA, i, uint64(size))
+			}
+			i--
+			dAtA[i] = 0xa
+		}
+	}
+	return len(dAtA) - i, nil
+}
+
 func encodeVarintQuery(dAtA []byte, offset int, v uint64) int {
 	offset -= sovQuery(v)
 	base := offset
@@ -2241,6 +3242,9 @@ func (m *QueryAllBalancesRequest) Size() (n int) {
 		l = m.Pagination.Size()
 		n += 1 + l + sovQuery(uint64(l))
 	}
+	if m.ResolveDenom {
+		n += 2
+	}
 	return n
 }
 
@@ -2294,6 +3298,36 @@ func (m *QuerySpendableBalancesResponse) Size() (n int) {
 	}
 	if m.Pagination != nil {
 		l = m.Pagination.Size()
+		n += 1 + l + sovQuery(uint64(l))
+	}
+	return n
+}
+
+func (m *QuerySpendableBalanceByDenomRequest) Size() (n int) {
+	if m == nil {
+		return 0
+	}
+	var l int
+	_ = l
+	l = len(m.Address)
+	if l > 0 {
+		n += 1 + l + sovQuery(uint64(l))
+	}
+	l = len(m.Denom)
+	if l > 0 {
+		n += 1 + l + sovQuery(uint64(l))
+	}
+	return n
+}
+
+func (m *QuerySpendableBalanceByDenomResponse) Size() (n int) {
+	if m == nil {
+		return 0
+	}
+	var l int
+	_ = l
+	if m.Balance != nil {
+		l = m.Balance.Size()
 		n += 1 + l + sovQuery(uint64(l))
 	}
 	return n
@@ -2431,6 +3465,30 @@ func (m *QueryDenomMetadataResponse) Size() (n int) {
 	return n
 }
 
+func (m *QueryDenomMetadataByQueryStringRequest) Size() (n int) {
+	if m == nil {
+		return 0
+	}
+	var l int
+	_ = l
+	l = len(m.Denom)
+	if l > 0 {
+		n += 1 + l + sovQuery(uint64(l))
+	}
+	return n
+}
+
+func (m *QueryDenomMetadataByQueryStringResponse) Size() (n int) {
+	if m == nil {
+		return 0
+	}
+	var l int
+	_ = l
+	l = m.Metadata.Size()
+	n += 1 + l + sovQuery(uint64(l))
+	return n
+}
+
 func (m *QueryDenomOwnersRequest) Size() (n int) {
 	if m == nil {
 		return 0
@@ -2478,6 +3536,80 @@ func (m *QueryDenomOwnersResponse) Size() (n int) {
 	if m.Pagination != nil {
 		l = m.Pagination.Size()
 		n += 1 + l + sovQuery(uint64(l))
+	}
+	return n
+}
+
+func (m *QueryDenomOwnersByQueryRequest) Size() (n int) {
+	if m == nil {
+		return 0
+	}
+	var l int
+	_ = l
+	l = len(m.Denom)
+	if l > 0 {
+		n += 1 + l + sovQuery(uint64(l))
+	}
+	if m.Pagination != nil {
+		l = m.Pagination.Size()
+		n += 1 + l + sovQuery(uint64(l))
+	}
+	return n
+}
+
+func (m *QueryDenomOwnersByQueryResponse) Size() (n int) {
+	if m == nil {
+		return 0
+	}
+	var l int
+	_ = l
+	if len(m.DenomOwners) > 0 {
+		for _, e := range m.DenomOwners {
+			l = e.Size()
+			n += 1 + l + sovQuery(uint64(l))
+		}
+	}
+	if m.Pagination != nil {
+		l = m.Pagination.Size()
+		n += 1 + l + sovQuery(uint64(l))
+	}
+	return n
+}
+
+func (m *QuerySendEnabledRequest) Size() (n int) {
+	if m == nil {
+		return 0
+	}
+	var l int
+	_ = l
+	if len(m.Denoms) > 0 {
+		for _, s := range m.Denoms {
+			l = len(s)
+			n += 1 + l + sovQuery(uint64(l))
+		}
+	}
+	if m.Pagination != nil {
+		l = m.Pagination.Size()
+		n += 2 + l + sovQuery(uint64(l))
+	}
+	return n
+}
+
+func (m *QuerySendEnabledResponse) Size() (n int) {
+	if m == nil {
+		return 0
+	}
+	var l int
+	_ = l
+	if len(m.SendEnabled) > 0 {
+		for _, e := range m.SendEnabled {
+			l = e.Size()
+			n += 1 + l + sovQuery(uint64(l))
+		}
+	}
+	if m.Pagination != nil {
+		l = m.Pagination.Size()
+		n += 2 + l + sovQuery(uint64(l))
 	}
 	return n
 }
@@ -2785,6 +3917,26 @@ func (m *QueryAllBalancesRequest) Unmarshal(dAtA []byte) error {
 				return err
 			}
 			iNdEx = postIndex
+		case 3:
+			if wireType != 0 {
+				return fmt.Errorf("proto: wrong wireType = %d for field ResolveDenom", wireType)
+			}
+			var v int
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowQuery
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				v |= int(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			m.ResolveDenom = bool(v != 0)
 		default:
 			iNdEx = preIndex
 			skippy, err := skipQuery(dAtA[iNdEx:])
@@ -3140,6 +4292,206 @@ func (m *QuerySpendableBalancesResponse) Unmarshal(dAtA []byte) error {
 				m.Pagination = &query.PageResponse{}
 			}
 			if err := m.Pagination.Unmarshal(dAtA[iNdEx:postIndex]); err != nil {
+				return err
+			}
+			iNdEx = postIndex
+		default:
+			iNdEx = preIndex
+			skippy, err := skipQuery(dAtA[iNdEx:])
+			if err != nil {
+				return err
+			}
+			if (skippy < 0) || (iNdEx+skippy) < 0 {
+				return ErrInvalidLengthQuery
+			}
+			if (iNdEx + skippy) > l {
+				return io.ErrUnexpectedEOF
+			}
+			iNdEx += skippy
+		}
+	}
+
+	if iNdEx > l {
+		return io.ErrUnexpectedEOF
+	}
+	return nil
+}
+func (m *QuerySpendableBalanceByDenomRequest) Unmarshal(dAtA []byte) error {
+	l := len(dAtA)
+	iNdEx := 0
+	for iNdEx < l {
+		preIndex := iNdEx
+		var wire uint64
+		for shift := uint(0); ; shift += 7 {
+			if shift >= 64 {
+				return ErrIntOverflowQuery
+			}
+			if iNdEx >= l {
+				return io.ErrUnexpectedEOF
+			}
+			b := dAtA[iNdEx]
+			iNdEx++
+			wire |= uint64(b&0x7F) << shift
+			if b < 0x80 {
+				break
+			}
+		}
+		fieldNum := int32(wire >> 3)
+		wireType := int(wire & 0x7)
+		if wireType == 4 {
+			return fmt.Errorf("proto: QuerySpendableBalanceByDenomRequest: wiretype end group for non-group")
+		}
+		if fieldNum <= 0 {
+			return fmt.Errorf("proto: QuerySpendableBalanceByDenomRequest: illegal tag %d (wire type %d)", fieldNum, wire)
+		}
+		switch fieldNum {
+		case 1:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field Address", wireType)
+			}
+			var stringLen uint64
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowQuery
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				stringLen |= uint64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			intStringLen := int(stringLen)
+			if intStringLen < 0 {
+				return ErrInvalidLengthQuery
+			}
+			postIndex := iNdEx + intStringLen
+			if postIndex < 0 {
+				return ErrInvalidLengthQuery
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			m.Address = string(dAtA[iNdEx:postIndex])
+			iNdEx = postIndex
+		case 2:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field Denom", wireType)
+			}
+			var stringLen uint64
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowQuery
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				stringLen |= uint64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			intStringLen := int(stringLen)
+			if intStringLen < 0 {
+				return ErrInvalidLengthQuery
+			}
+			postIndex := iNdEx + intStringLen
+			if postIndex < 0 {
+				return ErrInvalidLengthQuery
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			m.Denom = string(dAtA[iNdEx:postIndex])
+			iNdEx = postIndex
+		default:
+			iNdEx = preIndex
+			skippy, err := skipQuery(dAtA[iNdEx:])
+			if err != nil {
+				return err
+			}
+			if (skippy < 0) || (iNdEx+skippy) < 0 {
+				return ErrInvalidLengthQuery
+			}
+			if (iNdEx + skippy) > l {
+				return io.ErrUnexpectedEOF
+			}
+			iNdEx += skippy
+		}
+	}
+
+	if iNdEx > l {
+		return io.ErrUnexpectedEOF
+	}
+	return nil
+}
+func (m *QuerySpendableBalanceByDenomResponse) Unmarshal(dAtA []byte) error {
+	l := len(dAtA)
+	iNdEx := 0
+	for iNdEx < l {
+		preIndex := iNdEx
+		var wire uint64
+		for shift := uint(0); ; shift += 7 {
+			if shift >= 64 {
+				return ErrIntOverflowQuery
+			}
+			if iNdEx >= l {
+				return io.ErrUnexpectedEOF
+			}
+			b := dAtA[iNdEx]
+			iNdEx++
+			wire |= uint64(b&0x7F) << shift
+			if b < 0x80 {
+				break
+			}
+		}
+		fieldNum := int32(wire >> 3)
+		wireType := int(wire & 0x7)
+		if wireType == 4 {
+			return fmt.Errorf("proto: QuerySpendableBalanceByDenomResponse: wiretype end group for non-group")
+		}
+		if fieldNum <= 0 {
+			return fmt.Errorf("proto: QuerySpendableBalanceByDenomResponse: illegal tag %d (wire type %d)", fieldNum, wire)
+		}
+		switch fieldNum {
+		case 1:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field Balance", wireType)
+			}
+			var msglen int
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowQuery
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				msglen |= int(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			if msglen < 0 {
+				return ErrInvalidLengthQuery
+			}
+			postIndex := iNdEx + msglen
+			if postIndex < 0 {
+				return ErrInvalidLengthQuery
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			if m.Balance == nil {
+				m.Balance = &types.Coin{}
+			}
+			if err := m.Balance.Unmarshal(dAtA[iNdEx:postIndex]); err != nil {
 				return err
 			}
 			iNdEx = postIndex
@@ -4039,6 +5391,171 @@ func (m *QueryDenomMetadataResponse) Unmarshal(dAtA []byte) error {
 	}
 	return nil
 }
+func (m *QueryDenomMetadataByQueryStringRequest) Unmarshal(dAtA []byte) error {
+	l := len(dAtA)
+	iNdEx := 0
+	for iNdEx < l {
+		preIndex := iNdEx
+		var wire uint64
+		for shift := uint(0); ; shift += 7 {
+			if shift >= 64 {
+				return ErrIntOverflowQuery
+			}
+			if iNdEx >= l {
+				return io.ErrUnexpectedEOF
+			}
+			b := dAtA[iNdEx]
+			iNdEx++
+			wire |= uint64(b&0x7F) << shift
+			if b < 0x80 {
+				break
+			}
+		}
+		fieldNum := int32(wire >> 3)
+		wireType := int(wire & 0x7)
+		if wireType == 4 {
+			return fmt.Errorf("proto: QueryDenomMetadataByQueryStringRequest: wiretype end group for non-group")
+		}
+		if fieldNum <= 0 {
+			return fmt.Errorf("proto: QueryDenomMetadataByQueryStringRequest: illegal tag %d (wire type %d)", fieldNum, wire)
+		}
+		switch fieldNum {
+		case 1:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field Denom", wireType)
+			}
+			var stringLen uint64
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowQuery
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				stringLen |= uint64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			intStringLen := int(stringLen)
+			if intStringLen < 0 {
+				return ErrInvalidLengthQuery
+			}
+			postIndex := iNdEx + intStringLen
+			if postIndex < 0 {
+				return ErrInvalidLengthQuery
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			m.Denom = string(dAtA[iNdEx:postIndex])
+			iNdEx = postIndex
+		default:
+			iNdEx = preIndex
+			skippy, err := skipQuery(dAtA[iNdEx:])
+			if err != nil {
+				return err
+			}
+			if (skippy < 0) || (iNdEx+skippy) < 0 {
+				return ErrInvalidLengthQuery
+			}
+			if (iNdEx + skippy) > l {
+				return io.ErrUnexpectedEOF
+			}
+			iNdEx += skippy
+		}
+	}
+
+	if iNdEx > l {
+		return io.ErrUnexpectedEOF
+	}
+	return nil
+}
+func (m *QueryDenomMetadataByQueryStringResponse) Unmarshal(dAtA []byte) error {
+	l := len(dAtA)
+	iNdEx := 0
+	for iNdEx < l {
+		preIndex := iNdEx
+		var wire uint64
+		for shift := uint(0); ; shift += 7 {
+			if shift >= 64 {
+				return ErrIntOverflowQuery
+			}
+			if iNdEx >= l {
+				return io.ErrUnexpectedEOF
+			}
+			b := dAtA[iNdEx]
+			iNdEx++
+			wire |= uint64(b&0x7F) << shift
+			if b < 0x80 {
+				break
+			}
+		}
+		fieldNum := int32(wire >> 3)
+		wireType := int(wire & 0x7)
+		if wireType == 4 {
+			return fmt.Errorf("proto: QueryDenomMetadataByQueryStringResponse: wiretype end group for non-group")
+		}
+		if fieldNum <= 0 {
+			return fmt.Errorf("proto: QueryDenomMetadataByQueryStringResponse: illegal tag %d (wire type %d)", fieldNum, wire)
+		}
+		switch fieldNum {
+		case 1:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field Metadata", wireType)
+			}
+			var msglen int
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowQuery
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				msglen |= int(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			if msglen < 0 {
+				return ErrInvalidLengthQuery
+			}
+			postIndex := iNdEx + msglen
+			if postIndex < 0 {
+				return ErrInvalidLengthQuery
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			if err := m.Metadata.Unmarshal(dAtA[iNdEx:postIndex]); err != nil {
+				return err
+			}
+			iNdEx = postIndex
+		default:
+			iNdEx = preIndex
+			skippy, err := skipQuery(dAtA[iNdEx:])
+			if err != nil {
+				return err
+			}
+			if (skippy < 0) || (iNdEx+skippy) < 0 {
+				return ErrInvalidLengthQuery
+			}
+			if (iNdEx + skippy) > l {
+				return io.ErrUnexpectedEOF
+			}
+			iNdEx += skippy
+		}
+	}
+
+	if iNdEx > l {
+		return io.ErrUnexpectedEOF
+	}
+	return nil
+}
 func (m *QueryDenomOwnersRequest) Unmarshal(dAtA []byte) error {
 	l := len(dAtA)
 	iNdEx := 0
@@ -4336,6 +5853,482 @@ func (m *QueryDenomOwnersResponse) Unmarshal(dAtA []byte) error {
 			}
 			iNdEx = postIndex
 		case 2:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field Pagination", wireType)
+			}
+			var msglen int
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowQuery
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				msglen |= int(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			if msglen < 0 {
+				return ErrInvalidLengthQuery
+			}
+			postIndex := iNdEx + msglen
+			if postIndex < 0 {
+				return ErrInvalidLengthQuery
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			if m.Pagination == nil {
+				m.Pagination = &query.PageResponse{}
+			}
+			if err := m.Pagination.Unmarshal(dAtA[iNdEx:postIndex]); err != nil {
+				return err
+			}
+			iNdEx = postIndex
+		default:
+			iNdEx = preIndex
+			skippy, err := skipQuery(dAtA[iNdEx:])
+			if err != nil {
+				return err
+			}
+			if (skippy < 0) || (iNdEx+skippy) < 0 {
+				return ErrInvalidLengthQuery
+			}
+			if (iNdEx + skippy) > l {
+				return io.ErrUnexpectedEOF
+			}
+			iNdEx += skippy
+		}
+	}
+
+	if iNdEx > l {
+		return io.ErrUnexpectedEOF
+	}
+	return nil
+}
+func (m *QueryDenomOwnersByQueryRequest) Unmarshal(dAtA []byte) error {
+	l := len(dAtA)
+	iNdEx := 0
+	for iNdEx < l {
+		preIndex := iNdEx
+		var wire uint64
+		for shift := uint(0); ; shift += 7 {
+			if shift >= 64 {
+				return ErrIntOverflowQuery
+			}
+			if iNdEx >= l {
+				return io.ErrUnexpectedEOF
+			}
+			b := dAtA[iNdEx]
+			iNdEx++
+			wire |= uint64(b&0x7F) << shift
+			if b < 0x80 {
+				break
+			}
+		}
+		fieldNum := int32(wire >> 3)
+		wireType := int(wire & 0x7)
+		if wireType == 4 {
+			return fmt.Errorf("proto: QueryDenomOwnersByQueryRequest: wiretype end group for non-group")
+		}
+		if fieldNum <= 0 {
+			return fmt.Errorf("proto: QueryDenomOwnersByQueryRequest: illegal tag %d (wire type %d)", fieldNum, wire)
+		}
+		switch fieldNum {
+		case 1:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field Denom", wireType)
+			}
+			var stringLen uint64
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowQuery
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				stringLen |= uint64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			intStringLen := int(stringLen)
+			if intStringLen < 0 {
+				return ErrInvalidLengthQuery
+			}
+			postIndex := iNdEx + intStringLen
+			if postIndex < 0 {
+				return ErrInvalidLengthQuery
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			m.Denom = string(dAtA[iNdEx:postIndex])
+			iNdEx = postIndex
+		case 2:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field Pagination", wireType)
+			}
+			var msglen int
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowQuery
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				msglen |= int(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			if msglen < 0 {
+				return ErrInvalidLengthQuery
+			}
+			postIndex := iNdEx + msglen
+			if postIndex < 0 {
+				return ErrInvalidLengthQuery
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			if m.Pagination == nil {
+				m.Pagination = &query.PageRequest{}
+			}
+			if err := m.Pagination.Unmarshal(dAtA[iNdEx:postIndex]); err != nil {
+				return err
+			}
+			iNdEx = postIndex
+		default:
+			iNdEx = preIndex
+			skippy, err := skipQuery(dAtA[iNdEx:])
+			if err != nil {
+				return err
+			}
+			if (skippy < 0) || (iNdEx+skippy) < 0 {
+				return ErrInvalidLengthQuery
+			}
+			if (iNdEx + skippy) > l {
+				return io.ErrUnexpectedEOF
+			}
+			iNdEx += skippy
+		}
+	}
+
+	if iNdEx > l {
+		return io.ErrUnexpectedEOF
+	}
+	return nil
+}
+func (m *QueryDenomOwnersByQueryResponse) Unmarshal(dAtA []byte) error {
+	l := len(dAtA)
+	iNdEx := 0
+	for iNdEx < l {
+		preIndex := iNdEx
+		var wire uint64
+		for shift := uint(0); ; shift += 7 {
+			if shift >= 64 {
+				return ErrIntOverflowQuery
+			}
+			if iNdEx >= l {
+				return io.ErrUnexpectedEOF
+			}
+			b := dAtA[iNdEx]
+			iNdEx++
+			wire |= uint64(b&0x7F) << shift
+			if b < 0x80 {
+				break
+			}
+		}
+		fieldNum := int32(wire >> 3)
+		wireType := int(wire & 0x7)
+		if wireType == 4 {
+			return fmt.Errorf("proto: QueryDenomOwnersByQueryResponse: wiretype end group for non-group")
+		}
+		if fieldNum <= 0 {
+			return fmt.Errorf("proto: QueryDenomOwnersByQueryResponse: illegal tag %d (wire type %d)", fieldNum, wire)
+		}
+		switch fieldNum {
+		case 1:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field DenomOwners", wireType)
+			}
+			var msglen int
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowQuery
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				msglen |= int(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			if msglen < 0 {
+				return ErrInvalidLengthQuery
+			}
+			postIndex := iNdEx + msglen
+			if postIndex < 0 {
+				return ErrInvalidLengthQuery
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			m.DenomOwners = append(m.DenomOwners, &DenomOwner{})
+			if err := m.DenomOwners[len(m.DenomOwners)-1].Unmarshal(dAtA[iNdEx:postIndex]); err != nil {
+				return err
+			}
+			iNdEx = postIndex
+		case 2:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field Pagination", wireType)
+			}
+			var msglen int
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowQuery
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				msglen |= int(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			if msglen < 0 {
+				return ErrInvalidLengthQuery
+			}
+			postIndex := iNdEx + msglen
+			if postIndex < 0 {
+				return ErrInvalidLengthQuery
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			if m.Pagination == nil {
+				m.Pagination = &query.PageResponse{}
+			}
+			if err := m.Pagination.Unmarshal(dAtA[iNdEx:postIndex]); err != nil {
+				return err
+			}
+			iNdEx = postIndex
+		default:
+			iNdEx = preIndex
+			skippy, err := skipQuery(dAtA[iNdEx:])
+			if err != nil {
+				return err
+			}
+			if (skippy < 0) || (iNdEx+skippy) < 0 {
+				return ErrInvalidLengthQuery
+			}
+			if (iNdEx + skippy) > l {
+				return io.ErrUnexpectedEOF
+			}
+			iNdEx += skippy
+		}
+	}
+
+	if iNdEx > l {
+		return io.ErrUnexpectedEOF
+	}
+	return nil
+}
+func (m *QuerySendEnabledRequest) Unmarshal(dAtA []byte) error {
+	l := len(dAtA)
+	iNdEx := 0
+	for iNdEx < l {
+		preIndex := iNdEx
+		var wire uint64
+		for shift := uint(0); ; shift += 7 {
+			if shift >= 64 {
+				return ErrIntOverflowQuery
+			}
+			if iNdEx >= l {
+				return io.ErrUnexpectedEOF
+			}
+			b := dAtA[iNdEx]
+			iNdEx++
+			wire |= uint64(b&0x7F) << shift
+			if b < 0x80 {
+				break
+			}
+		}
+		fieldNum := int32(wire >> 3)
+		wireType := int(wire & 0x7)
+		if wireType == 4 {
+			return fmt.Errorf("proto: QuerySendEnabledRequest: wiretype end group for non-group")
+		}
+		if fieldNum <= 0 {
+			return fmt.Errorf("proto: QuerySendEnabledRequest: illegal tag %d (wire type %d)", fieldNum, wire)
+		}
+		switch fieldNum {
+		case 1:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field Denoms", wireType)
+			}
+			var stringLen uint64
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowQuery
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				stringLen |= uint64(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			intStringLen := int(stringLen)
+			if intStringLen < 0 {
+				return ErrInvalidLengthQuery
+			}
+			postIndex := iNdEx + intStringLen
+			if postIndex < 0 {
+				return ErrInvalidLengthQuery
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			m.Denoms = append(m.Denoms, string(dAtA[iNdEx:postIndex]))
+			iNdEx = postIndex
+		case 99:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field Pagination", wireType)
+			}
+			var msglen int
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowQuery
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				msglen |= int(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			if msglen < 0 {
+				return ErrInvalidLengthQuery
+			}
+			postIndex := iNdEx + msglen
+			if postIndex < 0 {
+				return ErrInvalidLengthQuery
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			if m.Pagination == nil {
+				m.Pagination = &query.PageRequest{}
+			}
+			if err := m.Pagination.Unmarshal(dAtA[iNdEx:postIndex]); err != nil {
+				return err
+			}
+			iNdEx = postIndex
+		default:
+			iNdEx = preIndex
+			skippy, err := skipQuery(dAtA[iNdEx:])
+			if err != nil {
+				return err
+			}
+			if (skippy < 0) || (iNdEx+skippy) < 0 {
+				return ErrInvalidLengthQuery
+			}
+			if (iNdEx + skippy) > l {
+				return io.ErrUnexpectedEOF
+			}
+			iNdEx += skippy
+		}
+	}
+
+	if iNdEx > l {
+		return io.ErrUnexpectedEOF
+	}
+	return nil
+}
+func (m *QuerySendEnabledResponse) Unmarshal(dAtA []byte) error {
+	l := len(dAtA)
+	iNdEx := 0
+	for iNdEx < l {
+		preIndex := iNdEx
+		var wire uint64
+		for shift := uint(0); ; shift += 7 {
+			if shift >= 64 {
+				return ErrIntOverflowQuery
+			}
+			if iNdEx >= l {
+				return io.ErrUnexpectedEOF
+			}
+			b := dAtA[iNdEx]
+			iNdEx++
+			wire |= uint64(b&0x7F) << shift
+			if b < 0x80 {
+				break
+			}
+		}
+		fieldNum := int32(wire >> 3)
+		wireType := int(wire & 0x7)
+		if wireType == 4 {
+			return fmt.Errorf("proto: QuerySendEnabledResponse: wiretype end group for non-group")
+		}
+		if fieldNum <= 0 {
+			return fmt.Errorf("proto: QuerySendEnabledResponse: illegal tag %d (wire type %d)", fieldNum, wire)
+		}
+		switch fieldNum {
+		case 1:
+			if wireType != 2 {
+				return fmt.Errorf("proto: wrong wireType = %d for field SendEnabled", wireType)
+			}
+			var msglen int
+			for shift := uint(0); ; shift += 7 {
+				if shift >= 64 {
+					return ErrIntOverflowQuery
+				}
+				if iNdEx >= l {
+					return io.ErrUnexpectedEOF
+				}
+				b := dAtA[iNdEx]
+				iNdEx++
+				msglen |= int(b&0x7F) << shift
+				if b < 0x80 {
+					break
+				}
+			}
+			if msglen < 0 {
+				return ErrInvalidLengthQuery
+			}
+			postIndex := iNdEx + msglen
+			if postIndex < 0 {
+				return ErrInvalidLengthQuery
+			}
+			if postIndex > l {
+				return io.ErrUnexpectedEOF
+			}
+			m.SendEnabled = append(m.SendEnabled, &SendEnabled{})
+			if err := m.SendEnabled[len(m.SendEnabled)-1].Unmarshal(dAtA[iNdEx:postIndex]); err != nil {
+				return err
+			}
+			iNdEx = postIndex
+		case 99:
 			if wireType != 2 {
 				return fmt.Errorf("proto: wrong wireType = %d for field Pagination", wireType)
 			}

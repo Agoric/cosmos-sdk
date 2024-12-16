@@ -4,8 +4,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/gogo/protobuf/jsonpb"
-	"github.com/gogo/protobuf/proto"
+	"github.com/cosmos/gogoproto/jsonpb"
+	"github.com/cosmos/gogoproto/proto"
 	"github.com/stretchr/testify/require"
 
 	"github.com/cosmos/cosmos-sdk/codec/types"
@@ -44,7 +44,7 @@ var (
 func (dog FakeDog) Reset()                  {}
 func (dog FakeDog) String() string          { return "fakedog" }
 func (dog FakeDog) ProtoMessage()           {}
-func (dog FakeDog) XXX_MessageName() string { return proto.MessageName(&testdata.Dog{}) }
+func (dog FakeDog) XXX_MessageName() string { return proto.MessageName(&testdata.Dog{}) } //nolint:revive // XXX_ prefix is intentional
 func (dog FakeDog) Greet() string           { return "fakedog" }
 
 func TestRegister(t *testing.T) {
@@ -80,7 +80,7 @@ func TestRegister(t *testing.T) {
 	// Duplicate registration with different concrete type on same typeURL.
 	require.PanicsWithError(
 		t,
-		"concrete type *testdata.Dog has already been registered under typeURL /testdata.Dog, cannot register *types_test.FakeDog under same typeURL. "+
+		"concrete type *testdata.Dog has already been registered under typeURL /testpb.Dog, cannot register *types_test.FakeDog under same typeURL. "+
 			"This usually means that there are conflicting modules registering different concrete types for a same interface implementation",
 		func() {
 			registry.RegisterImplementations((*testdata.Animal)(nil), &FakeDog{})
@@ -151,7 +151,7 @@ func TestAny_ProtoJSON(t *testing.T) {
 	jm := &jsonpb.Marshaler{}
 	json, err := jm.MarshalToString(any)
 	require.NoError(t, err)
-	require.Equal(t, "{\"@type\":\"/testdata.Dog\",\"name\":\"Spot\"}", json)
+	require.Equal(t, "{\"@type\":\"/testpb.Dog\",\"name\":\"Spot\"}", json)
 
 	registry := testdata.NewTestInterfaceRegistry()
 	jum := &jsonpb.Unmarshaler{}
@@ -170,7 +170,7 @@ func TestAny_ProtoJSON(t *testing.T) {
 	require.NoError(t, err)
 	json, err = jm.MarshalToString(ha)
 	require.NoError(t, err)
-	require.Equal(t, "{\"animal\":{\"@type\":\"/testdata.Dog\",\"name\":\"Spot\"}}", json)
+	require.Equal(t, "{\"animal\":{\"@type\":\"/testpb.Dog\",\"name\":\"Spot\"}}", json)
 
 	require.NoError(t, err)
 	var ha2 testdata.HasAnimal

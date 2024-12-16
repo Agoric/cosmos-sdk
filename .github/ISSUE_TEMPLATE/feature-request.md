@@ -1,7 +1,8 @@
 ---
 name: Feature Request
 about: Create a proposal to request a feature
-
+title: "[Feature]: "
+labels: T:feature-request
 ---
 
 <!-- < < < < < < < < < < < < < < < < < < < < < < < < < < < < < < < < < ☺ 
@@ -25,12 +26,3 @@ Are there any disadvantages of including this feature? -->
 ## Proposal
 
 <!-- Detailed description of requirements of implementation -->
-
-____
-
-#### For Admin Use
-
-- [ ] Not duplicate issue
-- [ ] Appropriate labels applied
-- [ ] Appropriate contributors tagged
-- [ ] Contributor assigned/self-assigned

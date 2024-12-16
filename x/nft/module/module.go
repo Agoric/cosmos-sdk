@@ -1,37 +1,43 @@
-package nft
+package module
 
 import (
 	"context"
 	"encoding/json"
-	"math/rand"
 
-	"github.com/grpc-ecosystem/grpc-gateway/runtime"
-	"github.com/spf13/cobra"
-	abci "github.com/tendermint/tendermint/abci/types"
+	gwruntime "github.com/grpc-ecosystem/grpc-gateway/runtime"
+	"google.golang.org/grpc"
+
+	modulev1 "cosmossdk.io/api/cosmos/nft/module/v1"
+	"cosmossdk.io/core/address"
+	"cosmossdk.io/core/appmodule"
+	"cosmossdk.io/core/store"
+	"cosmossdk.io/depinject"
+	"cosmossdk.io/errors"
+	"cosmossdk.io/x/nft"
+	"cosmossdk.io/x/nft/keeper"
+	"cosmossdk.io/x/nft/simulation"
 
 	sdkclient "github.com/cosmos/cosmos-sdk/client"
 	"github.com/cosmos/cosmos-sdk/codec"
 	cdctypes "github.com/cosmos/cosmos-sdk/codec/types"
 	sdk "github.com/cosmos/cosmos-sdk/types"
-	sdkerrors "github.com/cosmos/cosmos-sdk/types/errors"
 	"github.com/cosmos/cosmos-sdk/types/module"
 	simtypes "github.com/cosmos/cosmos-sdk/types/simulation"
-
-	"github.com/cosmos/cosmos-sdk/x/nft"
-	"github.com/cosmos/cosmos-sdk/x/nft/client/cli"
-	"github.com/cosmos/cosmos-sdk/x/nft/keeper"
-	"github.com/cosmos/cosmos-sdk/x/nft/simulation"
 )
 
 var (
-	_ module.AppModule           = AppModule{}
-	_ module.AppModuleBasic      = AppModuleBasic{}
+	_ module.AppModuleBasic      = AppModule{}
 	_ module.AppModuleSimulation = AppModule{}
+	_ module.HasGenesis          = AppModule{}
+
+	_ appmodule.AppModule   = AppModule{}
+	_ appmodule.HasServices = AppModule{}
 )
 
 // AppModuleBasic defines the basic application module used by the nft module.
 type AppModuleBasic struct {
 	cdc codec.Codec
+	ac  address.Codec
 }
 
 // Name returns the nft module's name.
@@ -41,9 +47,10 @@ func (AppModuleBasic) Name() string {
 
 // RegisterServices registers a gRPC query service to respond to the
 // module-specific gRPC queries.
-func (am AppModule) RegisterServices(cfg module.Configurator) {
-	nft.RegisterMsgServer(cfg.MsgServer(), am.keeper)
-	nft.RegisterQueryServer(cfg.QueryServer(), am.keeper)
+func (am AppModule) RegisterServices(registrar grpc.ServiceRegistrar) error {
+	nft.RegisterMsgServer(registrar, am.keeper)
+	nft.RegisterQueryServer(registrar, am.keeper)
+	return nil
 }
 
 // RegisterLegacyAminoCodec registers the nft module's types for the given codec.
@@ -61,30 +68,20 @@ func (AppModuleBasic) DefaultGenesis(cdc codec.JSONCodec) json.RawMessage {
 }
 
 // ValidateGenesis performs genesis state validation for the nft module.
-func (AppModuleBasic) ValidateGenesis(cdc codec.JSONCodec, config sdkclient.TxEncodingConfig, bz json.RawMessage) error {
+func (ab AppModuleBasic) ValidateGenesis(cdc codec.JSONCodec, config sdkclient.TxEncodingConfig, bz json.RawMessage) error {
 	var data nft.GenesisState
 	if err := cdc.UnmarshalJSON(bz, &data); err != nil {
-		return sdkerrors.Wrapf(err, "failed to unmarshal %s genesis state", nft.ModuleName)
+		return errors.Wrapf(err, "failed to unmarshal %s genesis state", nft.ModuleName)
 	}
 
-	return nft.ValidateGenesis(data)
+	return nft.ValidateGenesis(data, ab.ac)
 }
 
 // RegisterGRPCGatewayRoutes registers the gRPC Gateway routes for the nft module.
-func (a AppModuleBasic) RegisterGRPCGatewayRoutes(clientCtx sdkclient.Context, mux *runtime.ServeMux) {
+func (AppModuleBasic) RegisterGRPCGatewayRoutes(clientCtx sdkclient.Context, mux *gwruntime.ServeMux) {
 	if err := nft.RegisterQueryHandlerClient(context.Background(), mux, nft.NewQueryClient(clientCtx)); err != nil {
 		panic(err)
 	}
-}
-
-// GetQueryCmd returns the cli query commands for the nft module
-func (AppModuleBasic) GetQueryCmd() *cobra.Command {
-	return cli.GetQueryCmd()
-}
-
-// GetTxCmd returns the transaction commands for the nft module
-func (AppModuleBasic) GetTxCmd() *cobra.Command {
-	return cli.GetTxCmd()
 }
 
 // AppModule implements the sdk.AppModule interface
@@ -100,7 +97,7 @@ type AppModule struct {
 // NewAppModule creates a new AppModule object
 func NewAppModule(cdc codec.Codec, keeper keeper.Keeper, ak nft.AccountKeeper, bk nft.BankKeeper, registry cdctypes.InterfaceRegistry) AppModule {
 	return AppModule{
-		AppModuleBasic: AppModuleBasic{cdc: cdc},
+		AppModuleBasic: AppModuleBasic{cdc: cdc, ac: ak.AddressCodec()},
 		keeper:         keeper,
 		accountKeeper:  ak,
 		bankKeeper:     bk,
@@ -108,38 +105,18 @@ func NewAppModule(cdc codec.Codec, keeper keeper.Keeper, ak nft.AccountKeeper, b
 	}
 }
 
-// Name returns the nft module's name.
-func (AppModule) Name() string {
-	return nft.ModuleName
-}
+// IsOnePerModuleType implements the depinject.OnePerModuleType interface.
+func (am AppModule) IsOnePerModuleType() {}
 
-// RegisterInvariants does nothing, there are no invariants to enforce
-func (AppModule) RegisterInvariants(_ sdk.InvariantRegistry) {}
-
-// Route returns the message routing key for the staking module.
-func (am AppModule) Route() sdk.Route {
-	return sdk.NewRoute(nft.RouterKey, nil)
-}
-
-func (am AppModule) NewHandler() sdk.Handler {
-	return nil
-}
-
-// QuerierRoute returns the route we respond to for abci queries
-func (AppModule) QuerierRoute() string { return "" }
-
-// LegacyQuerierHandler returns the nft module sdk.Querier.
-func (am AppModule) LegacyQuerierHandler(legacyQuerierCdc *codec.LegacyAmino) sdk.Querier {
-	return nil
-}
+// IsAppModule implements the appmodule.AppModule interface.
+func (am AppModule) IsAppModule() {}
 
 // InitGenesis performs genesis initialization for the nft module. It returns
 // no validator updates.
-func (am AppModule) InitGenesis(ctx sdk.Context, cdc codec.JSONCodec, data json.RawMessage) []abci.ValidatorUpdate {
+func (am AppModule) InitGenesis(ctx sdk.Context, cdc codec.JSONCodec, data json.RawMessage) {
 	var genesisState nft.GenesisState
 	cdc.MustUnmarshalJSON(data, &genesisState)
 	am.keeper.InitGenesis(ctx, &genesisState)
-	return []abci.ValidatorUpdate{}
 }
 
 // ExportGenesis returns the exported genesis state as raw bytes for the nft
@@ -157,23 +134,12 @@ func (AppModule) ConsensusVersion() uint64 { return 1 }
 // AppModuleSimulation functions
 
 // GenerateGenesisState creates a randomized GenState of the nft module.
-func (AppModule) GenerateGenesisState(simState *module.SimulationState) {
-	simulation.RandomizedGenState(simState)
-}
-
-// ProposalContents returns all the nft content functions used to
-// simulate governance proposals.
-func (am AppModule) ProposalContents(simState module.SimulationState) []simtypes.WeightedProposalContent {
-	return nil
-}
-
-// RandomizedParams creates randomized nft param changes for the simulator.
-func (AppModule) RandomizedParams(r *rand.Rand) []simtypes.ParamChange {
-	return nil
+func (am AppModule) GenerateGenesisState(simState *module.SimulationState) {
+	simulation.RandomizedGenState(simState, am.accountKeeper.AddressCodec())
 }
 
 // RegisterStoreDecoder registers a decoder for nft module's types
-func (am AppModule) RegisterStoreDecoder(sdr sdk.StoreDecoderRegistry) {
+func (am AppModule) RegisterStoreDecoder(sdr simtypes.StoreDecoderRegistry) {
 	sdr[keeper.StoreKey] = simulation.NewDecodeStore(am.cdc)
 }
 
@@ -181,7 +147,42 @@ func (am AppModule) RegisterStoreDecoder(sdr sdk.StoreDecoderRegistry) {
 func (am AppModule) WeightedOperations(simState module.SimulationState) []simtypes.WeightedOperation {
 	return simulation.WeightedOperations(
 		am.registry,
-		simState.AppParams, simState.Cdc,
+		simState.AppParams, simState.Cdc, simState.TxConfig,
 		am.accountKeeper, am.bankKeeper, am.keeper,
 	)
+}
+
+//
+// App Wiring Setup
+//
+
+func init() {
+	appmodule.Register(&modulev1.Module{},
+		appmodule.Provide(ProvideModule),
+	)
+}
+
+type NftInputs struct {
+	depinject.In
+
+	StoreService store.KVStoreService
+	Cdc          codec.Codec
+	Registry     cdctypes.InterfaceRegistry
+
+	AccountKeeper nft.AccountKeeper
+	BankKeeper    nft.BankKeeper
+}
+
+type NftOutputs struct {
+	depinject.Out
+
+	NFTKeeper keeper.Keeper
+	Module    appmodule.AppModule
+}
+
+func ProvideModule(in NftInputs) NftOutputs {
+	k := keeper.NewKeeper(in.StoreService, in.Cdc, in.AccountKeeper, in.BankKeeper)
+	m := NewAppModule(in.Cdc, k, in.AccountKeeper, in.BankKeeper, in.Registry)
+
+	return NftOutputs{NFTKeeper: k, Module: m}
 }

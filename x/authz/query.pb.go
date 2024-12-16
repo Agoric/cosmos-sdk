@@ -8,8 +8,8 @@ import (
 	fmt "fmt"
 	_ "github.com/cosmos/cosmos-proto"
 	query "github.com/cosmos/cosmos-sdk/types/query"
-	grpc1 "github.com/gogo/protobuf/grpc"
-	proto "github.com/gogo/protobuf/proto"
+	grpc1 "github.com/cosmos/gogoproto/grpc"
+	proto "github.com/cosmos/gogoproto/proto"
 	_ "google.golang.org/genproto/googleapis/api/annotations"
 	grpc "google.golang.org/grpc"
 	codes "google.golang.org/grpc/codes"
@@ -265,7 +265,7 @@ func (m *QueryGranterGrantsResponse) GetPagination() *query.PageResponse {
 	return nil
 }
 
-// QueryGranteeGrantsRequest is the request type for the Query/IssuedGrants RPC method.
+// QueryGranteeGrantsRequest is the request type for the Query/GranteeGrants RPC method.
 type QueryGranteeGrantsRequest struct {
 	Grantee string `protobuf:"bytes,1,opt,name=grantee,proto3" json:"grantee,omitempty"`
 	// pagination defines an pagination for the request.

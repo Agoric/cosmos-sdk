@@ -18,6 +18,11 @@ func (u Uint) BigInt() *big.Int {
 	return new(big.Int).Set(u.i)
 }
 
+// IsNil returns true if Uint is uninitialized
+func (u Uint) IsNil() bool {
+	return u.i == nil
+}
+
 // NewUintFromBigUint constructs Uint from big.Uint
 func NewUintFromBigInt(i *big.Int) Uint {
 	u, err := checkNewUint(i)
@@ -235,11 +240,11 @@ func checkNewUint(i *big.Int) (Uint, error) {
 
 // RelativePow raises x to the power of n, where x (and the result, z) are scaled by factor b
 // for example, RelativePow(210, 2, 100) = 441 (2.1^2 = 4.41)
-func RelativePow(x Uint, n Uint, b Uint) (z Uint) {
+func RelativePow(x, n, b Uint) (z Uint) {
 	if x.IsZero() {
 		if n.IsZero() {
-			z = b // 0^0 = 1
-			return
+			z = OneUint() // 0^0 = 1
+			return z
 		}
 		z = ZeroUint() // otherwise 0^a = 0
 		return

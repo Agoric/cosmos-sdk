@@ -5,41 +5,73 @@ import (
 	"testing"
 	"time"
 
+	abci "github.com/cometbft/cometbft/abci/types"
 	"github.com/stretchr/testify/suite"
 
-	abci "github.com/tendermint/tendermint/abci/types"
-	tmproto "github.com/tendermint/tendermint/proto/tendermint/types"
+	"cosmossdk.io/depinject"
+	"cosmossdk.io/log"
+	"cosmossdk.io/x/nft"
+	nftkeeper "cosmossdk.io/x/nft/keeper"
+	"cosmossdk.io/x/nft/simulation"
+	"cosmossdk.io/x/nft/testutil"
 
+	"github.com/cosmos/cosmos-sdk/client"
 	"github.com/cosmos/cosmos-sdk/codec"
-	"github.com/cosmos/cosmos-sdk/simapp"
+	codectypes "github.com/cosmos/cosmos-sdk/codec/types"
+	"github.com/cosmos/cosmos-sdk/runtime"
+	simtestutil "github.com/cosmos/cosmos-sdk/testutil/sims"
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	simtypes "github.com/cosmos/cosmos-sdk/types/simulation"
-	"github.com/cosmos/cosmos-sdk/x/bank/testutil"
-	"github.com/cosmos/cosmos-sdk/x/nft"
-	"github.com/cosmos/cosmos-sdk/x/nft/simulation"
+	authkeeper "github.com/cosmos/cosmos-sdk/x/auth/keeper"
+	bankkeeper "github.com/cosmos/cosmos-sdk/x/bank/keeper"
+	banktestutil "github.com/cosmos/cosmos-sdk/x/bank/testutil"
+	stakingkeeper "github.com/cosmos/cosmos-sdk/x/staking/keeper"
 )
 
 type SimTestSuite struct {
 	suite.Suite
 
 	ctx sdk.Context
-	app *simapp.SimApp
+
+	app               *runtime.App
+	codec             codec.Codec
+	interfaceRegistry codectypes.InterfaceRegistry
+	txConfig          client.TxConfig
+	accountKeeper     authkeeper.AccountKeeper
+	bankKeeper        bankkeeper.Keeper
+	stakingKeeper     *stakingkeeper.Keeper
+	nftKeeper         nftkeeper.Keeper
 }
 
 func (suite *SimTestSuite) SetupTest() {
-	checkTx := false
-	app := simapp.Setup(suite.T(), checkTx)
+	app, err := simtestutil.Setup(
+		depinject.Configs(
+			testutil.AppConfig,
+			depinject.Supply(log.NewNopLogger()),
+		),
+		&suite.codec,
+		&suite.interfaceRegistry,
+		&suite.txConfig,
+		&suite.accountKeeper,
+		&suite.bankKeeper,
+		&suite.stakingKeeper,
+		&suite.nftKeeper,
+	)
+	suite.Require().NoError(err)
+
 	suite.app = app
-	suite.ctx = app.BaseApp.NewContext(checkTx, tmproto.Header{})
+	suite.ctx = app.BaseApp.NewContext(false)
 }
 
 func (suite *SimTestSuite) TestWeightedOperations() {
 	weightedOps := simulation.WeightedOperations(
-		suite.app.InterfaceRegistry(),
+		suite.interfaceRegistry,
 		make(simtypes.AppParams),
-		suite.app.AppCodec(),
-		suite.app.AccountKeeper,
-		suite.app.BankKeeper, suite.app.NFTKeeper,
+		suite.codec,
+		suite.txConfig,
+		suite.accountKeeper,
+		suite.bankKeeper,
+		suite.nftKeeper,
 	)
 
 	// setup 3 accounts
@@ -52,11 +84,13 @@ func (suite *SimTestSuite) TestWeightedOperations() {
 		opMsgRoute string
 		opMsgName  string
 	}{
-		{simulation.WeightSend, simulation.TypeMsgSend, simulation.TypeMsgSend},
+		{simulation.WeightSend, nft.ModuleName, simulation.TypeMsgSend},
 	}
 
 	for i, w := range weightedOps {
-		operationMsg, _, _ := w.Op()(r, suite.app.BaseApp, suite.ctx, accs, "")
+		operationMsg, _, err := w.Op()(r, suite.app.BaseApp, suite.ctx, accs, "")
+		suite.Require().NoError(err)
+
 		// the following checks are very much dependent from the ordering of the output given
 		// by WeightedOperations. if the ordering in WeightedOperations changes some tests
 		// will fail
@@ -69,14 +103,14 @@ func (suite *SimTestSuite) TestWeightedOperations() {
 func (suite *SimTestSuite) getTestingAccounts(r *rand.Rand, n int) []simtypes.Account {
 	accounts := simtypes.RandomAccounts(r, n)
 
-	initAmt := suite.app.StakingKeeper.TokensFromConsensusPower(suite.ctx, 200000)
+	initAmt := suite.stakingKeeper.TokensFromConsensusPower(suite.ctx, 200000)
 	initCoins := sdk.NewCoins(sdk.NewCoin("stake", initAmt))
 
 	// add coins to the accounts
 	for _, account := range accounts {
-		acc := suite.app.AccountKeeper.NewAccountWithAddress(suite.ctx, account.Address)
-		suite.app.AccountKeeper.SetAccount(suite.ctx, acc)
-		suite.Require().NoError(testutil.FundAccount(suite.app.BankKeeper, suite.ctx, account.Address, initCoins))
+		acc := suite.accountKeeper.NewAccountWithAddress(suite.ctx, account.Address)
+		suite.accountKeeper.SetAccount(suite.ctx, acc)
+		suite.Require().NoError(banktestutil.FundAccount(suite.ctx, suite.bankKeeper, account.Address, initCoins))
 	}
 
 	return accounts
@@ -89,22 +123,20 @@ func (suite *SimTestSuite) TestSimulateMsgSend() {
 	blockTime := time.Now().UTC()
 	ctx := suite.ctx.WithBlockTime(blockTime)
 
-	// begin a new block
-	suite.app.BeginBlock(abci.RequestBeginBlock{
-		Header: tmproto.Header{
-			Height:  suite.app.LastBlockHeight() + 1,
-			AppHash: suite.app.LastCommitID().Hash,
-		},
+	// begin new block
+	suite.app.FinalizeBlock(&abci.RequestFinalizeBlock{
+		Height: suite.app.LastBlockHeight() + 1,
+		Hash:   suite.app.LastCommitID().Hash,
 	})
 
 	// execute operation
-	registry := suite.app.InterfaceRegistry()
-	op := simulation.SimulateMsgSend(codec.NewProtoCodec(registry), suite.app.AccountKeeper, suite.app.BankKeeper, suite.app.NFTKeeper)
+	registry := suite.interfaceRegistry
+	op := simulation.SimulateMsgSend(codec.NewProtoCodec(registry), suite.txConfig, suite.accountKeeper, suite.bankKeeper, suite.nftKeeper)
 	operationMsg, futureOperations, err := op(r, suite.app.BaseApp, ctx, accounts, "")
 	suite.Require().NoError(err)
 
 	var msg nft.MsgSend
-	suite.app.AppCodec().UnmarshalJSON(operationMsg.Msg, &msg)
+	suite.codec.UnmarshalJSON(operationMsg.Msg, &msg)
 	suite.Require().True(operationMsg.OK)
 	suite.Require().Len(futureOperations, 0)
 }

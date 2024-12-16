@@ -16,6 +16,9 @@ type KeyTable struct {
 	m map[string]attribute
 }
 
+// IsOnePerModuleType implements depinject.OnePerModuleType
+func (KeyTable) IsOnePerModuleType() {}
+
 func NewKeyTable(pairs ...ParamSetPair) KeyTable {
 	keyTable := KeyTable{
 		m: make(map[string]attribute),
@@ -33,8 +36,8 @@ func (t KeyTable) RegisterType(psp ParamSetPair) KeyTable {
 	if len(psp.Key) == 0 {
 		panic("cannot register ParamSetPair with an parameter empty key")
 	}
-	if !sdk.IsAlphaNumericOrUnderscore(string(psp.Key)) {
-		panic("cannot register ParamSetPair with a non-alphanumeric or underscore parameter key")
+	if !sdk.IsAlphaNumeric(string(psp.Key)) {
+		panic("cannot register ParamSetPair with a non-alphanumeric parameter key")
 	}
 	if psp.ValidatorFn == nil {
 		panic("cannot register ParamSetPair without a value validation function")
