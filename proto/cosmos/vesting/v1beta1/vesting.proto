@@ -98,8 +98,8 @@ message PermanentLockedAccount {
 // PeriodicVestingAccount), or vesting which is subject to clawback
 // of unvested tokens, or a combination (tokens vest, but are still locked).
 message ClawbackVestingAccount {
-  option (gogoproto.goproto_getters)  = false;
-  option (gogoproto.goproto_stringer) = false;
+  option (amino.name)                = "cosmos-sdk/PermanentLockedAccount";
+  option (gogoproto.goproto_getters) = false;
 
   BaseVestingAccount base_vesting_account = 1 [(gogoproto.embed) = true];
 

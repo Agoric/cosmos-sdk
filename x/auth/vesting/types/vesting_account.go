@@ -702,11 +702,6 @@ func (va ClawbackVestingAccount) Validate() error {
 	return va.BaseVestingAccount.Validate()
 }
 
-func (va ClawbackVestingAccount) String() string {
-	out, _ := va.MarshalYAML()
-	return out.(string)
-}
-
 // MarshalYAML returns the YAML representation of a ClawbackVestingAccount.
 func (va ClawbackVestingAccount) MarshalYAML() (interface{}, error) {
 	accAddr, err := sdk.AccAddressFromBech32(va.Address)

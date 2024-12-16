@@ -130,6 +130,7 @@ type ModuleInputs struct {
 
 	AccountKeeper keeper.AccountKeeper
 	BankKeeper    types.BankKeeper
+	StakingKeeper types.StakingKeeper
 }
 
 type ModuleOutputs struct {
