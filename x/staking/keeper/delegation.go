@@ -1151,6 +1151,70 @@ func (k Keeper) Undelegate(
 	return completionTime, returnAmount, nil
 }
 
+// TransferUnbonding changes the ownership of UnbondingDelegation entries
+// until the desired number of tokens have changed hands. Returns the actual
+// number of tokens transferred.
+func (k Keeper) TransferUnbonding(ctx sdk.Context, fromAddr, toAddr sdk.AccAddress, valAddr sdk.ValAddress, wantAmt math.Int) (math.Int, error) {
+	transferred := math.ZeroInt()
+	ubdFrom, err := k.GetUnbondingDelegation(ctx, fromAddr, valAddr)
+	if errors.Is(err, types.ErrNoUnbondingDelegation) {
+		return transferred, nil
+	}
+	if err != nil {
+		return math.Int{}, err
+	}
+	ubdFromModified := false
+
+	for i := 0; i < len(ubdFrom.Entries) && wantAmt.IsPositive(); i++ {
+		entry := ubdFrom.Entries[i]
+		toXfer := entry.Balance
+		if toXfer.GT(wantAmt) {
+			toXfer = wantAmt
+		}
+		if !toXfer.IsPositive() {
+			continue
+		}
+
+		hasMaxUnboundingDelegation, err := k.HasMaxUnbondingDelegationEntries(ctx, toAddr, valAddr)
+		if err != nil {
+			return math.Int{}, err
+		}
+		if hasMaxUnboundingDelegation {
+			// TODO pre-compute the maximum entries we can add rather than checking each time
+			break
+		}
+		ubdTo, err := k.SetUnbondingDelegationEntry(ctx, toAddr, valAddr, entry.CreationHeight, entry.CompletionTime, toXfer)
+		if err != nil {
+			return math.Int{}, err
+		}
+		err = k.InsertUBDQueue(ctx, ubdTo, entry.CompletionTime)
+		if err != nil {
+			return math.Int{}, err
+		}
+		transferred = transferred.Add(toXfer)
+		wantAmt = wantAmt.Sub(toXfer)
+
+		ubdFromModified = true
+		remaining := entry.Balance.Sub(toXfer)
+		if remaining.IsZero() {
+			ubdFrom.RemoveEntry(int64(i))
+			i--
+			continue
+		}
+		entry.Balance = remaining
+		ubdFrom.Entries[i] = entry
+	}
+
+	if ubdFromModified {
+		if len(ubdFrom.Entries) == 0 {
+			k.RemoveUnbondingDelegation(ctx, ubdFrom)
+		} else {
+			k.SetUnbondingDelegation(ctx, ubdFrom)
+		}
+	}
+	return transferred, nil
+}
+
 // CompleteUnbonding completes the unbonding of all mature entries in the
 // retrieved unbonding delegation object and returns the total unbonding balance
 // or an error upon failure.
