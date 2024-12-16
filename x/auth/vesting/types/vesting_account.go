@@ -1,8 +1,13 @@
 package types
 
 import (
+	sdkerrors "cosmossdk.io/errors"
 	"errors"
 	"fmt"
+	cryptotypes "github.com/cosmos/cosmos-sdk/crypto/types"
+	errors2 "github.com/cosmos/cosmos-sdk/types/errors"
+	stdmath "math"
+	"sigs.k8s.io/yaml"
 	"time"
 
 	"cosmossdk.io/math"
@@ -160,6 +165,21 @@ func (bva BaseVestingAccount) Validate() error {
 	}
 
 	return bva.BaseAccount.Validate()
+}
+
+type vestingAccountYAML struct {
+	Address          sdk.AccAddress `json:"address"`
+	PubKey           string         `json:"public_key"`
+	AccountNumber    uint64         `json:"account_number"`
+	Sequence         uint64         `json:"sequence"`
+	OriginalVesting  sdk.Coins      `json:"original_vesting"`
+	DelegatedFree    sdk.Coins      `json:"delegated_free"`
+	DelegatedVesting sdk.Coins      `json:"delegated_vesting"`
+	EndTime          int64          `json:"end_time"`
+
+	// custom fields based on concrete vesting type which can be omitted
+	StartTime      int64   `json:"start_time,omitempty"`
+	VestingPeriods Periods `json:"vesting_periods,omitempty"`
 }
 
 // Continuous Vesting Account
@@ -550,11 +570,6 @@ func (plva PermanentLockedAccount) Validate() error {
 	return plva.BaseVestingAccount.Validate()
 }
 
-func (plva PermanentLockedAccount) String() string {
-	out, _ := plva.MarshalYAML()
-	return out.(string)
-}
-
 type getPK interface {
 	GetPubKey() cryptotypes.PubKey
 }
@@ -717,7 +732,7 @@ func (va ClawbackVestingAccount) MarshalYAML() (interface{}, error) {
 // addGrant merges a new clawback vesting grant into an existing ClawbackVestingAccount.
 func (va *ClawbackVestingAccount) AddGrant(ctx sdk.Context, funderAddress string, sk StakingKeeper, grantStartTime int64, grantLockupPeriods, grantVestingPeriods []Period, grantCoins sdk.Coins) error {
 	if funderAddress != va.FunderAddress {
-		return sdkerrors.Wrapf(sdkerrors.ErrInvalidRequest, "account %s can only accept grants from account %s",
+		return sdkerrors.Wrapf(errors2.ErrInvalidRequest, "account %s can only accept grants from account %s",
 			va.GetAddress(), va.FunderAddress)
 	}
 
@@ -854,7 +869,7 @@ func (va *ClawbackVestingAccount) updateDelegation(encumbered, toClawBack, bonde
 // intact.  Account state is updated to reflect the removals.
 func (va *ClawbackVestingAccount) Clawback(ctx sdk.Context, requestor, dest sdk.AccAddress, ak AccountKeeper, bk BankKeeper, sk StakingKeeper) error {
 	if requestor.String() != va.FunderAddress {
-		return sdkerrors.Wrapf(sdkerrors.ErrInvalidRequest, "clawback can only be requested by original funder %s", va.FunderAddress)
+		return sdkerrors.Wrapf(errors2.ErrInvalidRequest, "clawback can only be requested by original funder %s", va.FunderAddress)
 	}
 
 	// Compute the clawback based on the account state only, and update account
@@ -895,7 +910,7 @@ func (va *ClawbackVestingAccount) Clawback(ctx sdk.Context, requestor, dest sdk.
 
 	// If we need more, transfer UnbondingDelegations.
 	want := toClawBack.AmountOf(bondDenom)
-	unbondings := sk.GetUnbondingDelegations(ctx, addr, math.MaxUint16)
+	unbondings := sk.GetUnbondingDelegations(ctx, addr, stdmath.MaxUint16)
 	for _, unbonding := range unbondings {
 		valAddr, err := sdk.ValAddressFromBech32(unbonding.ValidatorAddress)
 		if err != nil {
@@ -910,7 +925,7 @@ func (va *ClawbackVestingAccount) Clawback(ctx sdk.Context, requestor, dest sdk.
 
 	// If we need more, transfer Delegations.
 	if want.IsPositive() {
-		delegations := sk.GetDelegatorDelegations(ctx, addr, math.MaxUint16)
+		delegations := sk.GetDelegatorDelegations(ctx, addr, stdmath.MaxUint16)
 		for _, delegation := range delegations {
 			validatorAddr, err := sdk.ValAddressFromBech32(delegation.ValidatorAddress)
 			if err != nil {
@@ -926,7 +941,7 @@ func (va *ClawbackVestingAccount) Clawback(ctx sdk.Context, requestor, dest sdk.
 				// validator has no tokens
 				continue
 			}
-			transferredShares := sk.TransferDelegation(ctx, addr, dest, delegation.GetValidatorAddr(), wantShares)
+			transferredShares := sk.TransferDelegation(ctx, addr, dest, sdk.ValAddress(delegation.GetValidatorAddr()), wantShares)
 			// to be conservative in what we're clawing back, round transferred shares up
 			transferred := validator.TokensFromSharesRoundUp(transferredShares).RoundInt()
 			want = want.Sub(transferred)
@@ -978,8 +993,8 @@ func (va *BaseVestingAccount) forceTransfer(ctx sdk.Context, amt sdk.Coins, dest
 	if !want.IsPositive() {
 		return
 	}
-	got := sdk.NewInt(0)
-	unbondings := sk.GetUnbondingDelegations(ctx, addr, math.MaxUint16)
+	got := math.NewInt(0)
+	unbondings := sk.GetUnbondingDelegations(ctx, addr, stdmath.MaxUint16)
 	for _, unbonding := range unbondings {
 		valAddr, err := sdk.ValAddressFromBech32(unbonding.ValidatorAddress)
 		if err != nil {
@@ -995,7 +1010,7 @@ func (va *BaseVestingAccount) forceTransfer(ctx sdk.Context, amt sdk.Coins, dest
 
 	// If we need more, transfer Delegations.
 	if want.IsPositive() {
-		delegations := sk.GetDelegatorDelegations(ctx, addr, math.MaxUint16)
+		delegations := sk.GetDelegatorDelegations(ctx, addr, stdmath.MaxUint16)
 		for _, delegation := range delegations {
 			validatorAddr, err := sdk.ValAddressFromBech32(delegation.ValidatorAddress)
 			if err != nil {
@@ -1012,7 +1027,7 @@ func (va *BaseVestingAccount) forceTransfer(ctx sdk.Context, amt sdk.Coins, dest
 				continue
 			}
 			// the following might transfer fewer shares than wanted
-			transferredShares := sk.TransferDelegation(ctx, addr, dest, delegation.GetValidatorAddr(), wantShares)
+			transferredShares := sk.TransferDelegation(ctx, addr, dest, sdk.ValAddress(delegation.GetValidatorAddr()), wantShares)
 			// to be conservative in what we're clawing back, round transferred shares up
 			transferred := validator.TokensFromSharesRoundUp(transferredShares).RoundInt()
 			want = want.Sub(transferred)
@@ -1078,7 +1093,7 @@ func (va ClawbackVestingAccount) distributeReward(ctx sdk.Context, ak AccountKee
 	now := ctx.BlockTime().Unix()
 	t := va.StartTime
 	firstUnvestedPeriod := 0
-	unvestedTokens := sdk.ZeroInt()
+	unvestedTokens := math.ZeroInt()
 	for i, period := range va.VestingPeriods {
 		t += period.Length
 		if t <= now {
@@ -1089,11 +1104,11 @@ func (va ClawbackVestingAccount) distributeReward(ctx sdk.Context, ak AccountKee
 	}
 
 	runningTotReward := sdk.NewCoins()
-	runningTotStaking := sdk.ZeroInt()
+	runningTotStaking := math.ZeroInt()
 	for i := firstUnvestedPeriod; i < len(va.VestingPeriods); i++ {
 		period := va.VestingPeriods[i]
 		runningTotStaking = runningTotStaking.Add(period.Amount.AmountOf(bondDenom))
-		runningTotRatio := sdk.NewDecFromInt(runningTotStaking).Quo(sdk.NewDecFromInt(unvestedTokens))
+		runningTotRatio := math.LegacyNewDecFromInt(runningTotStaking).Quo(math.LegacyNewDecFromInt(unvestedTokens))
 		targetCoins := scaleCoins(reward, runningTotRatio)
 		thisReward := targetCoins.Sub(runningTotReward...)
 		runningTotReward = targetCoins
@@ -1106,17 +1121,17 @@ func (va ClawbackVestingAccount) distributeReward(ctx sdk.Context, ak AccountKee
 }
 
 // scaleCoins scales the given coins, rounding down.
-func scaleCoins(coins sdk.Coins, scale sdk.Dec) sdk.Coins {
+func scaleCoins(coins sdk.Coins, scale math.LegacyDec) sdk.Coins {
 	scaledCoins := sdk.NewCoins()
 	for _, coin := range coins {
-		amt := sdk.NewDecFromInt(coin.Amount).Mul(scale).TruncateInt() // round down
+		amt := math.LegacyNewDecFromInt(coin.Amount).Mul(scale).TruncateInt() // round down
 		scaledCoins = scaledCoins.Add(sdk.NewCoin(coin.Denom, amt))
 	}
 	return scaledCoins
 }
 
 // intMin returns the minimum of its arguments.
-func intMin(a, b sdk.Int) sdk.Int {
+func intMin(a, b math.Int) math.Int {
 	if a.GT(b) {
 		return b
 	}
@@ -1164,7 +1179,7 @@ func (va ClawbackVestingAccount) PostReward(ctx sdk.Context, reward sdk.Coins, a
 		va.distributeReward(ctx, ak, bondDenom, reward)
 		return
 	}
-	unvestedRatio := sdk.NewDecFromInt(unvested).QuoTruncate(sdk.NewDecFromInt(bonded)) // round down
+	unvestedRatio := math.LegacyNewDecFromInt(unvested).QuoTruncate(math.LegacyNewDecFromInt(bonded)) // round down
 	unvestedReward := scaleCoins(reward, unvestedRatio)
 	va.distributeReward(ctx, ak, bondDenom, unvestedReward)
 }
