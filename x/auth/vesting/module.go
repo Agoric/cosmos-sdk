@@ -79,6 +79,7 @@ type AppModule struct {
 
 	accountKeeper keeper.AccountKeeper
 	bankKeeper    types.BankKeeper
+	stakingKeeper types.StakingKeeper
 }
 
 func NewAppModule(ak keeper.AccountKeeper, bk types.BankKeeper) AppModule {
@@ -97,7 +98,7 @@ func (am AppModule) IsAppModule() {}
 
 // RegisterServices registers module services.
 func (am AppModule) RegisterServices(registrar grpc.ServiceRegistrar) error {
-	types.RegisterMsgServer(registrar, NewMsgServerImpl(am.accountKeeper, am.bankKeeper))
+	types.RegisterMsgServer(registrar, NewMsgServerImpl(am.accountKeeper, am.bankKeeper, am.stakingKeeper))
 	return nil
 }
 
