@@ -173,7 +173,7 @@ type MockStakingKeeperMockRecorder struct {
 }
 
 // NewMockStakingKeeper creates a new mock instance.
-func NewMockStakingKeeper(ctrl *gomock.Controller) *MockStakingKeeper {
+func NewMockStakingKeeper(ctrl *gomock.Controller) MockStakingKeeper {
 	mock := &MockStakingKeeper{ctrl: ctrl}
 	mock.recorder = &MockStakingKeeperMockRecorder{mock}
 	return mock
@@ -185,11 +185,12 @@ func (m *MockStakingKeeper) EXPECT() *MockStakingKeeperMockRecorder {
 }
 
 // BondDenom mocks base method.
-func (m *MockStakingKeeper) BondDenom(ctx types.Context) string {
+func (m *MockStakingKeeper) BondDenom(ctx context.Context) (string, error) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "BondDenom", ctx)
 	ret0, _ := ret[0].(string)
-	return ret0
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
 }
 
 // BondDenom indicates an expected call of BondDenom.
@@ -199,11 +200,12 @@ func (mr *MockStakingKeeperMockRecorder) BondDenom(ctx interface{}) *gomock.Call
 }
 
 // GetDelegatorBonded mocks base method.
-func (m *MockStakingKeeper) GetDelegatorBonded(ctx types.Context, delegator types.AccAddress) math.Int {
+func (m *MockStakingKeeper) GetDelegatorBonded(ctx context.Context, delegator types.AccAddress) (math.Int, error) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "GetDelegatorBonded", ctx, delegator)
 	ret0, _ := ret[0].(math.Int)
-	return ret0
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
 }
 
 // GetDelegatorBonded indicates an expected call of GetDelegatorBonded.
@@ -213,11 +215,12 @@ func (mr *MockStakingKeeperMockRecorder) GetDelegatorBonded(ctx, delegator inter
 }
 
 // GetDelegatorDelegations mocks base method.
-func (m *MockStakingKeeper) GetDelegatorDelegations(ctx types.Context, delegator types.AccAddress, maxRetrieve uint16) []types0.Delegation {
+func (m *MockStakingKeeper) GetDelegatorDelegations(ctx context.Context, delegator types.AccAddress, maxRetrieve uint16) ([]types0.Delegation, error) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "GetDelegatorDelegations", ctx, delegator, maxRetrieve)
 	ret0, _ := ret[0].([]types0.Delegation)
-	return ret0
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
 }
 
 // GetDelegatorDelegations indicates an expected call of GetDelegatorDelegations.
@@ -227,11 +230,12 @@ func (mr *MockStakingKeeperMockRecorder) GetDelegatorDelegations(ctx, delegator,
 }
 
 // GetDelegatorUnbonding mocks base method.
-func (m *MockStakingKeeper) GetDelegatorUnbonding(ctx types.Context, delegator types.AccAddress) math.Int {
+func (m *MockStakingKeeper) GetDelegatorUnbonding(ctx context.Context, delegator types.AccAddress) (math.Int, error) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "GetDelegatorUnbonding", ctx, delegator)
 	ret0, _ := ret[0].(math.Int)
-	return ret0
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
 }
 
 // GetDelegatorUnbonding indicates an expected call of GetDelegatorUnbonding.
@@ -241,11 +245,12 @@ func (mr *MockStakingKeeperMockRecorder) GetDelegatorUnbonding(ctx, delegator in
 }
 
 // GetUnbondingDelegations mocks base method.
-func (m *MockStakingKeeper) GetUnbondingDelegations(ctx types.Context, delegator types.AccAddress, maxRetrieve uint16) []types0.UnbondingDelegation {
+func (m *MockStakingKeeper) GetUnbondingDelegations(ctx context.Context, delegator types.AccAddress, maxRetrieve uint16) ([]types0.UnbondingDelegation, error) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "GetUnbondingDelegations", ctx, delegator, maxRetrieve)
 	ret0, _ := ret[0].([]types0.UnbondingDelegation)
-	return ret0
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
 }
 
 // GetUnbondingDelegations indicates an expected call of GetUnbondingDelegations.
@@ -255,11 +260,11 @@ func (mr *MockStakingKeeperMockRecorder) GetUnbondingDelegations(ctx, delegator,
 }
 
 // GetValidator mocks base method.
-func (m *MockStakingKeeper) GetValidator(ctx types.Context, valAddr types.ValAddress) (types0.Validator, bool) {
+func (m *MockStakingKeeper) GetValidator(ctx context.Context, valAddr types.ValAddress) (types0.Validator, error) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "GetValidator", ctx, valAddr)
 	ret0, _ := ret[0].(types0.Validator)
-	ret1, _ := ret[1].(bool)
+	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
 
@@ -270,11 +275,12 @@ func (mr *MockStakingKeeperMockRecorder) GetValidator(ctx, valAddr interface{}) 
 }
 
 // TransferDelegation mocks base method.
-func (m *MockStakingKeeper) TransferDelegation(ctx types.Context, fromAddr, toAddr types.AccAddress, valAddr types.ValAddress, wantShares math.LegacyDec) math.LegacyDec {
+func (m *MockStakingKeeper) TransferDelegation(ctx context.Context, fromAddr, toAddr types.AccAddress, valAddr types.ValAddress, wantShares math.LegacyDec) (math.LegacyDec, error) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "TransferDelegation", ctx, fromAddr, toAddr, valAddr, wantShares)
 	ret0, _ := ret[0].(math.LegacyDec)
-	return ret0
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
 }
 
 // TransferDelegation indicates an expected call of TransferDelegation.
@@ -284,11 +290,12 @@ func (mr *MockStakingKeeperMockRecorder) TransferDelegation(ctx, fromAddr, toAdd
 }
 
 // TransferUnbonding mocks base method.
-func (m *MockStakingKeeper) TransferUnbonding(ctx types.Context, fromAddr, toAddr types.AccAddress, valAddr types.ValAddress, wantAmt math.Int) math.Int {
+func (m *MockStakingKeeper) TransferUnbonding(ctx context.Context, fromAddr, toAddr types.AccAddress, valAddr types.ValAddress, wantAmt math.Int) (math.Int, error) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "TransferUnbonding", ctx, fromAddr, toAddr, valAddr, wantAmt)
 	ret0, _ := ret[0].(math.Int)
-	return ret0
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
 }
 
 // TransferUnbonding indicates an expected call of TransferUnbonding.

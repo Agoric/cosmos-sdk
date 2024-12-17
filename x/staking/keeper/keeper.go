@@ -20,8 +20,6 @@ var _ types.ValidatorSet = Keeper{}
 // Implements DelegationSet interface
 var _ types.DelegationSet = Keeper{}
 
-//var _ vestingtypes.StakingKeeper = Keeper{}
-
 // Keeper of the x/staking store
 type Keeper struct {
 	storeService          storetypes.KVStoreService
