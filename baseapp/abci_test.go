@@ -9,8 +9,11 @@ import (
 	"errors"
 	"fmt"
 	"math/rand"
+	"os"
+	"os/signal"
 	"strconv"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 
@@ -2542,7 +2545,7 @@ func TestABCI_HaltChain(t *testing.T) {
 				}
 			}()
 
-			app := NewBaseApp(
+			app := NewBaseapp(
 				name, logger, db, nil,
 				SetHaltHeight(tc.haltHeight),
 				SetHaltTime(tc.haltTime),

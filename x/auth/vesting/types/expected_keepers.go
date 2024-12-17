@@ -30,16 +30,16 @@ type AccountKeeper interface {
 // StakingKeeper defines the expected interface contract the vesting module
 // requires for finding and changing the delegated tokens, used in clawback.
 type StakingKeeper interface {
-	BondDenom(ctx sdk.Context) string
-	GetDelegatorBonded(ctx sdk.Context, delegator sdk.AccAddress) math.Int
-	GetDelegatorDelegations(ctx sdk.Context, delegator sdk.AccAddress,
-		maxRetrieve uint16) []stakingtypes.Delegation
-	GetDelegatorUnbonding(ctx sdk.Context, delegator sdk.AccAddress) math.Int
-	GetUnbondingDelegations(ctx sdk.Context, delegator sdk.AccAddress,
-		maxRetrieve uint16) []stakingtypes.UnbondingDelegation
-	GetValidator(ctx sdk.Context, valAddr sdk.ValAddress) (stakingtypes.Validator, bool)
-	TransferUnbonding(ctx sdk.Context, fromAddr, toAddr sdk.AccAddress, valAddr sdk.ValAddress, wantAmt math.Int) math.Int
-	TransferDelegation(ctx sdk.Context, fromAddr, toAddr sdk.AccAddress, valAddr sdk.ValAddress, wantShares math.LegacyDec) math.LegacyDec
+	BondDenom(ctx context.Context) (string, error)
+	GetDelegatorBonded(ctx context.Context, delegator sdk.AccAddress) (math.Int, error)
+	GetDelegatorDelegations(ctx context.Context, delegator sdk.AccAddress,
+		maxRetrieve uint16) ([]stakingtypes.Delegation, error)
+	GetDelegatorUnbonding(ctx context.Context, delegator sdk.AccAddress) (math.Int, error)
+	GetUnbondingDelegations(ctx context.Context, delegator sdk.AccAddress,
+		maxRetrieve uint16) ([]stakingtypes.UnbondingDelegation, error)
+	GetValidator(ctx context.Context, valAddr sdk.ValAddress) (stakingtypes.Validator, error)
+	TransferUnbonding(ctx context.Context, fromAddr, toAddr sdk.AccAddress, valAddr sdk.ValAddress, wantAmt math.Int) (math.Int, error)
+	TransferDelegation(ctx context.Context, fromAddr, toAddr sdk.AccAddress, valAddr sdk.ValAddress, wantShares math.LegacyDec) (math.LegacyDec, error)
 }
 
 // DistributionHooks is the expected interface for distribution module hooks.

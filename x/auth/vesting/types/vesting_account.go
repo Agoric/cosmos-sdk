@@ -408,12 +408,22 @@ func (pva PeriodicVestingAccount) Validate() error {
 }
 
 // addGrant merges a new periodic vesting grant into an existing PeriodicVestingAccount.
-func (pva *PeriodicVestingAccount) AddGrant(ctx sdk.Context, sk StakingKeeper, grantStartTime int64, grantVestingPeriods []Period, grantCoins sdk.Coins) {
+func (pva *PeriodicVestingAccount) AddGrant(ctx sdk.Context, sk StakingKeeper, grantStartTime int64, grantVestingPeriods []Period, grantCoins sdk.Coins) error {
 	// how much is really delegated?
-	bondedAmt := sk.GetDelegatorBonded(ctx, pva.GetAddress())
-	unbondingAmt := sk.GetDelegatorUnbonding(ctx, pva.GetAddress())
+	bondedAmt, err := sk.GetDelegatorBonded(ctx, pva.GetAddress())
+	if err != nil {
+		return err
+	}
+	unbondingAmt, err := sk.GetDelegatorUnbonding(ctx, pva.GetAddress())
+	if err != nil {
+		return err
+	}
 	delegatedAmt := bondedAmt.Add(unbondingAmt)
-	delegated := sdk.NewCoins(sdk.NewCoin(sk.BondDenom(ctx), delegatedAmt))
+	bondDenom, err := sk.BondDenom(ctx)
+	if err != nil {
+		return err
+	}
+	delegated := sdk.NewCoins(sdk.NewCoin(bondDenom, delegatedAmt))
 
 	// discover what has been slashed
 	oldDelegated := pva.DelegatedVesting.Add(pva.DelegatedFree...)
@@ -436,6 +446,7 @@ func (pva *PeriodicVestingAccount) AddGrant(ctx sdk.Context, sk StakingKeeper, g
 	unvested2 := pva.GetVestingCoins(ctx.BlockTime())
 	pva.DelegatedVesting = coinsMin(newTotalDelegated, unvested2)
 	pva.DelegatedFree = newTotalDelegated.Sub(pva.DelegatedVesting...)
+	return nil
 }
 
 // Delayed Vesting Account
@@ -732,10 +743,20 @@ func (va *ClawbackVestingAccount) AddGrant(ctx sdk.Context, funderAddress string
 	}
 
 	// how much is really delegated?
-	bondedAmt := sk.GetDelegatorBonded(ctx, va.GetAddress())
-	unbondingAmt := sk.GetDelegatorUnbonding(ctx, va.GetAddress())
+	bondedAmt, err := sk.GetDelegatorBonded(ctx, va.GetAddress())
+	if err != nil {
+		return err
+	}
+	unbondingAmt, err := sk.GetDelegatorUnbonding(ctx, va.GetAddress())
+	if err != nil {
+		return err
+	}
 	delegatedAmt := bondedAmt.Add(unbondingAmt)
-	delegated := sdk.NewCoins(sdk.NewCoin(sk.BondDenom(ctx), delegatedAmt))
+	bondedDenom, err := sk.BondDenom(ctx)
+	if err != nil {
+		return err
+	}
+	delegated := sdk.NewCoins(sdk.NewCoin(bondedDenom, delegatedAmt))
 
 	// discover what has been slashed
 	oldDelegated := va.DelegatedVesting.Add(va.DelegatedFree...)
@@ -873,12 +894,21 @@ func (va *ClawbackVestingAccount) Clawback(ctx sdk.Context, requestor, dest sdk.
 		return nil
 	}
 	addr := va.GetAddress()
-	bondDenom := sk.BondDenom(ctx)
+	bondDenom, err := sk.BondDenom(ctx)
+	if err != nil {
+		return err
+	}
 
 	// Compute the clawback based on bank balance and delegation, and update account
 	encumbered := va.GetVestingCoins(ctx.BlockTime())
-	bondedAmt := sk.GetDelegatorBonded(ctx, addr)
-	unbondingAmt := sk.GetDelegatorUnbonding(ctx, addr)
+	bondedAmt, err := sk.GetDelegatorBonded(ctx, addr)
+	if err != nil {
+		return err
+	}
+	unbondingAmt, err := sk.GetDelegatorUnbonding(ctx, addr)
+	if err != nil {
+		return err
+	}
 	bonded := sdk.NewCoins(sdk.NewCoin(bondDenom, bondedAmt))
 	unbonding := sdk.NewCoins(sdk.NewCoin(bondDenom, unbondingAmt))
 	unbonded := bk.GetAllBalances(ctx, addr)
@@ -893,7 +923,7 @@ func (va *ClawbackVestingAccount) Clawback(ctx sdk.Context, requestor, dest sdk.
 	// the balance of the account is unlocked and can be freely transferred.
 	spendable := bk.SpendableCoins(ctx, addr)
 	toXfer := coinsMin(toClawBack, spendable)
-	err := bk.SendCoins(ctx, addr, dest, toXfer)
+	err = bk.SendCoins(ctx, addr, dest, toXfer)
 	if err != nil {
 		return err // shouldn't happen, given spendable check
 	}
@@ -905,13 +935,19 @@ func (va *ClawbackVestingAccount) Clawback(ctx sdk.Context, requestor, dest sdk.
 
 	// If we need more, transfer UnbondingDelegations.
 	want := toClawBack.AmountOf(bondDenom)
-	unbondings := sk.GetUnbondingDelegations(ctx, addr, stdmath.MaxUint16)
+	unbondings, err := sk.GetUnbondingDelegations(ctx, addr, stdmath.MaxUint16)
+	if err != nil {
+		return err
+	}
 	for _, unbonding := range unbondings {
 		valAddr, err := sdk.ValAddressFromBech32(unbonding.ValidatorAddress)
 		if err != nil {
 			panic(err)
 		}
-		transferred := sk.TransferUnbonding(ctx, addr, dest, valAddr, want)
+		transferred, err := sk.TransferUnbonding(ctx, addr, dest, valAddr, want)
+		if err != nil {
+			return err
+		}
 		want = want.Sub(transferred)
 		if !want.IsPositive() {
 			break
@@ -920,14 +956,18 @@ func (va *ClawbackVestingAccount) Clawback(ctx sdk.Context, requestor, dest sdk.
 
 	// If we need more, transfer Delegations.
 	if want.IsPositive() {
-		delegations := sk.GetDelegatorDelegations(ctx, addr, stdmath.MaxUint16)
+		delegations, err := sk.GetDelegatorDelegations(ctx, addr, stdmath.MaxUint16)
+		if err != nil {
+			return err
+		}
 		for _, delegation := range delegations {
 			validatorAddr, err := sdk.ValAddressFromBech32(delegation.ValidatorAddress)
 			if err != nil {
 				panic(err) // shouldn't happen
 			}
-			validator, found := sk.GetValidator(ctx, validatorAddr)
-			if !found {
+			validator, err := sk.GetValidator(ctx, validatorAddr)
+
+			if err != nil {
 				// validator has been removed
 				continue
 			}
@@ -936,7 +976,10 @@ func (va *ClawbackVestingAccount) Clawback(ctx sdk.Context, requestor, dest sdk.
 				// validator has no tokens
 				continue
 			}
-			transferredShares := sk.TransferDelegation(ctx, addr, dest, sdk.ValAddress(delegation.GetValidatorAddr()), wantShares)
+			transferredShares, err := sk.TransferDelegation(ctx, addr, dest, sdk.ValAddress(delegation.GetValidatorAddr()), wantShares)
+			if err != nil {
+				return err
+			}
 			// to be conservative in what we're clawing back, round transferred shares up
 			transferred := validator.TokensFromSharesRoundUp(transferredShares).RoundInt()
 			want = want.Sub(transferred)
@@ -962,9 +1005,9 @@ func (va *ClawbackVestingAccount) Clawback(ctx sdk.Context, requestor, dest sdk.
 // Any unbonding or staked tokens transferred are deducted from
 // the DelegatedFree/Vesting fields.
 // TODO: refactor to de-dup with clawback()
-func (va *BaseVestingAccount) forceTransfer(ctx sdk.Context, amt sdk.Coins, dest sdk.AccAddress, ak AccountKeeper, bk BankKeeper, sk StakingKeeper) {
+func (va *BaseVestingAccount) forceTransfer(ctx sdk.Context, amt sdk.Coins, dest sdk.AccAddress, ak AccountKeeper, bk BankKeeper, sk StakingKeeper) error {
 	if amt.IsZero() {
-		return
+		return nil
 	}
 	addr := va.GetAddress()
 
@@ -983,19 +1026,28 @@ func (va *BaseVestingAccount) forceTransfer(ctx sdk.Context, amt sdk.Coins, dest
 	// Staking is the only way unvested tokens should be missing from the bank balance.
 
 	// If we need more, transfer UnbondingDelegations.
-	bondDenom := sk.BondDenom(ctx)
+	bondDenom, err := sk.BondDenom(ctx)
+	if err != nil {
+		return err
+	}
 	want := amt.AmountOf(bondDenom)
 	if !want.IsPositive() {
-		return
+		return nil
 	}
 	got := math.NewInt(0)
-	unbondings := sk.GetUnbondingDelegations(ctx, addr, stdmath.MaxUint16)
+	unbondings, err := sk.GetUnbondingDelegations(ctx, addr, stdmath.MaxUint16)
+	if err != nil {
+		return err
+	}
 	for _, unbonding := range unbondings {
 		valAddr, err := sdk.ValAddressFromBech32(unbonding.ValidatorAddress)
 		if err != nil {
 			panic(err)
 		}
-		transferred := sk.TransferUnbonding(ctx, addr, dest, valAddr, want)
+		transferred, err := sk.TransferUnbonding(ctx, addr, dest, valAddr, want)
+		if err != nil {
+			return err
+		}
 		want = want.Sub(transferred)
 		got = got.Add(transferred)
 		if !want.IsPositive() {
@@ -1005,14 +1057,17 @@ func (va *BaseVestingAccount) forceTransfer(ctx sdk.Context, amt sdk.Coins, dest
 
 	// If we need more, transfer Delegations.
 	if want.IsPositive() {
-		delegations := sk.GetDelegatorDelegations(ctx, addr, stdmath.MaxUint16)
+		delegations, err := sk.GetDelegatorDelegations(ctx, addr, stdmath.MaxUint16)
+		if err != nil {
+			return err
+		}
 		for _, delegation := range delegations {
 			validatorAddr, err := sdk.ValAddressFromBech32(delegation.ValidatorAddress)
 			if err != nil {
 				panic(err) // shouldn't happen
 			}
-			validator, found := sk.GetValidator(ctx, validatorAddr)
-			if !found {
+			validator, err := sk.GetValidator(ctx, validatorAddr)
+			if err != nil {
 				// validator has been removed
 				continue
 			}
@@ -1022,7 +1077,10 @@ func (va *BaseVestingAccount) forceTransfer(ctx sdk.Context, amt sdk.Coins, dest
 				continue
 			}
 			// the following might transfer fewer shares than wanted
-			transferredShares := sk.TransferDelegation(ctx, addr, dest, sdk.ValAddress(delegation.GetValidatorAddr()), wantShares)
+			transferredShares, err := sk.TransferDelegation(ctx, addr, dest, sdk.ValAddress(delegation.GetValidatorAddr()), wantShares)
+			if err != nil {
+				return err
+			}
 			// to be conservative in what we're clawing back, round transferred shares up
 			transferred := validator.TokensFromSharesRoundUp(transferredShares).RoundInt()
 			want = want.Sub(transferred)
@@ -1057,6 +1115,7 @@ func (va *BaseVestingAccount) forceTransfer(ctx sdk.Context, amt sdk.Coins, dest
 
 	// If we've transferred everything and still haven't transferred the desired clawback amount,
 	// then the account must have lost some unvested tokens from slashing.
+	return nil
 }
 
 // returnGrants transfers the original vesting tokens back to the funder, zeroing out all grant-related accounting.
@@ -1135,26 +1194,35 @@ func intMin(a, b math.Int) math.Int {
 
 // postReward encumbers a previously-deposited reward according to the current vesting apportionment of staking.
 // Note that rewards might be unvested, but are unlocked.
-func (va ClawbackVestingAccount) PostReward(ctx sdk.Context, reward sdk.Coins, ak AccountKeeper, bk BankKeeper, sk StakingKeeper) {
+func (va ClawbackVestingAccount) PostReward(ctx sdk.Context, reward sdk.Coins, ak AccountKeeper, bk BankKeeper, sk StakingKeeper) error {
 	// Find the scheduled amount of vested and unvested staking tokens
-	bondDenom := sk.BondDenom(ctx)
+	bondDenom, err := sk.BondDenom(ctx)
+	if err != nil {
+		return err
+	}
 	vested := ReadSchedule(va.StartTime, va.EndTime, va.VestingPeriods, va.OriginalVesting, ctx.BlockTime().Unix()).AmountOf(bondDenom)
 	unvested := va.OriginalVesting.AmountOf(bondDenom).Sub(vested)
 
 	if unvested.IsZero() {
 		// no need to adjust the vesting schedule
-		return
+		return nil
 	}
 
 	if vested.IsZero() {
 		// all staked tokens must be unvested
 		va.distributeReward(ctx, ak, bondDenom, reward)
-		return
+		return nil
 	}
 
 	// Find current split of account balance on staking axis
-	bonded := sk.GetDelegatorBonded(ctx, va.GetAddress())
-	unbonding := sk.GetDelegatorUnbonding(ctx, va.GetAddress())
+	bonded, err := sk.GetDelegatorBonded(ctx, va.GetAddress())
+	if err != nil {
+		return err
+	}
+	unbonding, err := sk.GetDelegatorUnbonding(ctx, va.GetAddress())
+	if err != nil {
+		return err
+	}
 	delegated := bonded.Add(unbonding)
 
 	// discover what has been slashed and remove from delegated amount
@@ -1168,13 +1236,14 @@ func (va ClawbackVestingAccount) PostReward(ctx sdk.Context, reward sdk.Coins, a
 
 	// Compute the unvested amount of reward and add to vesting schedule
 	if unvested.IsZero() {
-		return
+		return nil
 	}
 	if vested.IsZero() {
 		va.distributeReward(ctx, ak, bondDenom, reward)
-		return
+		return nil
 	}
 	unvestedRatio := math.LegacyNewDecFromInt(unvested).QuoTruncate(math.LegacyNewDecFromInt(bonded)) // round down
 	unvestedReward := scaleCoins(reward, unvestedRatio)
 	va.distributeReward(ctx, ak, bondDenom, unvestedReward)
+	return nil
 }

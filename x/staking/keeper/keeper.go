@@ -2,14 +2,12 @@ package keeper
 
 import (
 	"context"
-	"fmt"
-
-	abci "github.com/cometbft/cometbft/abci/types"
-
 	addresscodec "cosmossdk.io/core/address"
 	storetypes "cosmossdk.io/core/store"
 	"cosmossdk.io/log"
 	"cosmossdk.io/math"
+	"fmt"
+	abci "github.com/cometbft/cometbft/abci/types"
 
 	"github.com/cosmos/cosmos-sdk/codec"
 	sdk "github.com/cosmos/cosmos-sdk/types"
@@ -21,6 +19,8 @@ var _ types.ValidatorSet = Keeper{}
 
 // Implements DelegationSet interface
 var _ types.DelegationSet = Keeper{}
+
+//var _ vestingtypes.StakingKeeper = Keeper{}
 
 // Keeper of the x/staking store
 type Keeper struct {
