@@ -3,8 +3,10 @@ package baseapp
 import (
 	"context"
 	"fmt"
+	"os"
 	"sort"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/cockroachdb/errors"
@@ -903,11 +905,20 @@ func (app *BaseApp) checkHalt(height int64, time time.Time) error {
 		halt = true
 	}
 
-	if halt {
-		return fmt.Errorf("halt per configuration height %d time %d", app.haltHeight, app.haltTime)
+	if !halt {
+		return nil
 	}
-
-	return nil
+	// [AGORIC] Make a best-effort attempt to kill our process.
+	p, err := os.FindProcess(os.Getpid())
+	if err != nil {
+		// attempt cascading signals in case SIGINT fails (os dependent)
+		_ = p.Signal(syscall.SIGINT)
+		_ = p.Signal(syscall.SIGTERM)
+		// Errors in these signal calls are not meaningful to us.  We tried our
+		// best, but we don't care (and can't tell) if or how the signal handler
+		// responds.
+	}
+	return fmt.Errorf("halt per configuration height %d time %d", app.haltHeight, app.haltTime)
 }
 
 // Commit implements the ABCI interface. It will commit all state that exists in
