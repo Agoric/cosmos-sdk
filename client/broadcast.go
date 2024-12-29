@@ -2,6 +2,7 @@ package client
 
 import (
 	"context"
+	"encoding/hex"
 	"fmt"
 	"strings"
 
@@ -85,33 +86,91 @@ func CheckTendermintError(err error, tx tmtypes.Tx) *sdk.TxResponse {
 // waits for a commit. An error is only returned if there is no RPC node
 // connection or if broadcasting fails.
 //
-// NOTE: This should ideally not be used as the request may timeout but the tx
-// may still be included in a block. Use BroadcastTxAsync or BroadcastTxSync
-// instead.
+// [AGORIC]: This function subscribes to the transaction's inclusion in a block,
+// and then use BroadcastTxSync to broadcast the transaction.  This will block
+// potentially forever if the transaction is never included in a block.  And so,
+// it is up to the caller to ensure that proper timeout/retry logic is
+// implemented.
 func (ctx Context) BroadcastTxCommit(txBytes []byte) (*sdk.TxResponse, error) {
 	node, err := ctx.GetNode()
 	if err != nil {
 		return nil, err
 	}
 
-	res, err := node.BroadcastTxCommit(context.Background(), txBytes)
-	if err == nil {
-		return sdk.NewResponseFormatBroadcastTxCommit(res), nil
+	// Start the node if it is not connected.
+	nodeWasRunning := node.IsRunning()
+	if !nodeWasRunning {
+		if err = node.Start(); err != nil {
+			return nil, err
+		}
 	}
 
-	// with these changes(https://github.com/tendermint/tendermint/pull/7683)
-	// in tendermint, we receive both an error and a non-empty res from TM. Here
-	// we handle the case where both are relevant. Note: without this edge-case handling,
-	// CLI is breaking (for few transactions ex: executing unathorized messages in feegrant)
-	// this check is added to tackle the particular case.
-	if strings.Contains(err.Error(), "transaction encountered error") {
-		return sdk.NewResponseFormatBroadcastTxCommit(res), nil
+	// To prevent races, first subscribe to a query for the transaction's
+	// inclusion in a block.  Clean up when we are done.
+	query := tmtypes.EventQueryTxFor(txBytes)
+	defer func() {
+		_ = node.Unsubscribe(context.Background(), "txCommitted", query.String())
+		if !nodeWasRunning {
+			_ = node.Stop()
+		}
+	}()
+	txch, err := node.Subscribe(context.Background(), "txCommitted", query.String())
+	if err != nil {
+		return nil, err
 	}
 
+	// Broadcast the transaction.
+	res, err := node.BroadcastTxSync(context.Background(), txBytes)
 	if errRes := CheckTendermintError(err, txBytes); errRes != nil {
 		return errRes, nil
 	}
-	return sdk.NewResponseFormatBroadcastTxCommit(res), err
+
+	// Check for an error in the broadcast.
+	newRes := sdk.NewResponseFormatBroadcastTx(res)
+	if newRes.Code != 0 {
+		return newRes, err
+	}
+
+	// Wait for the tx query to be satisfied.
+	ed := <-txch
+
+	// Process the event data and return the commit response.
+	var commitRes *sdk.TxResponse
+	switch evt := ed.Data.(type) {
+	case tmtypes.EventDataTx:
+		parsedLogs, _ := sdk.ParseABCILogs(evt.Result.Log)
+		commitRes = &sdk.TxResponse{
+			TxHash:    newRes.TxHash,
+			Height:    evt.Height,
+			Codespace: evt.Result.Codespace,
+			Code:      evt.Result.Code,
+			Data:      strings.ToUpper(hex.EncodeToString(evt.Result.Data)),
+			RawLog:    evt.Result.Log,
+			Logs:      parsedLogs,
+			Info:      evt.Result.Info,
+			GasWanted: evt.Result.GasWanted,
+			GasUsed:   evt.Result.GasUsed,
+			Tx:        newRes.Tx,
+			Timestamp: newRes.Timestamp,
+			Events:    evt.Result.Events,
+		}
+		if !evt.Result.IsOK() {
+			return commitRes, fmt.Errorf("unexpected result code %d", evt.Result.Code)
+		}
+		return commitRes, nil
+	default:
+		parsedLogs, _ := sdk.ParseABCILogs(newRes.RawLog)
+		sdkErr := sdkerrors.ErrNotSupported
+		commitRes := &sdk.TxResponse{
+			Code:      sdkErr.ABCICode(),
+			Codespace: sdkErr.Codespace(),
+			Data:      newRes.Data,
+			RawLog:    newRes.RawLog,
+			Logs:      parsedLogs,
+			TxHash:    newRes.TxHash,
+		}
+		return commitRes, fmt.Errorf("unsupported event data type %T", ed.Data)
+	}
 }
 
 // BroadcastTxSync broadcasts transaction bytes to a Tendermint node
