@@ -173,7 +173,7 @@ type MockStakingKeeperMockRecorder struct {
 }
 
 // NewMockStakingKeeper creates a new mock instance.
-func NewMockStakingKeeper(ctrl *gomock.Controller) MockStakingKeeper {
+func NewMockStakingKeeper(ctrl *gomock.Controller) *MockStakingKeeper {
 	mock := &MockStakingKeeper{ctrl: ctrl}
 	mock.recorder = &MockStakingKeeperMockRecorder{mock}
 	return mock
