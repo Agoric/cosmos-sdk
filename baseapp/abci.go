@@ -161,8 +161,17 @@ func (app *BaseApp) Query(_ context.Context, req *abci.RequestQuery) (resp *abci
 	}()
 
 	// when a client did not provide a query height, manually inject the latest
+	//[AGORIC] sanity chheck require for parallel Query https://github.com/agoric-labs/cosmos-sdk/pull/111
+	lastHeight := app.LastBlockHeight()
 	if req.Height == 0 {
-		req.Height = app.LastBlockHeight()
+		req.Height = lastHeight
+	}
+	if req.Height > lastHeight {
+		return sdkerrors.QueryResult(
+			errorsmod.Wrapf(sdkerrors.ErrInvalidHeight,
+				"given height %d is greater than latest height %d", req.Height, lastHeight),
+			app.trace,
+		), nil
 	}
 
 	telemetry.IncrCounter(1, "query", "count")

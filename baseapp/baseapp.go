@@ -489,6 +489,7 @@ func (app *BaseApp) setState(mode execMode, h cmtproto.Header) {
 		ctx: sdk.NewContext(ms, h, false, app.logger).
 			WithStreamingManager(app.streamingManager).
 			WithHeaderInfo(headerInfo),
+		eventHistory: sdk.Events{},
 	}
 
 	switch mode {
@@ -778,12 +779,20 @@ func (app *BaseApp) deliverTx(tx []byte) *abci.ExecTxResult {
 		return resp
 	}
 
+	// [AGORIC] When successful, remember event history. Append the events to the event history.
+	events := sdk.MarkEventsToIndex(result.Events, app.indexEvents)
+	sdkEvents := make(sdk.Events, len(events))
+	for _, event := range result.Events {
+		sdkEvents = sdkEvents.AppendEvent(sdk.Event(event))
+	}
+	app.finalizeBlockState.eventHistory = app.finalizeBlockState.eventHistory.AppendEvents(sdkEvents)
+
 	resp = &abci.ExecTxResult{
 		GasWanted: int64(gInfo.GasWanted),
 		GasUsed:   int64(gInfo.GasUsed),
 		Log:       result.Log,
 		Data:      result.Data,
-		Events:    sdk.MarkEventsToIndex(result.Events, app.indexEvents),
+		Events:    events,
 	}
 
 	return resp
@@ -795,7 +804,11 @@ func (app *BaseApp) endBlock(_ context.Context) (sdk.EndBlock, error) {
 	var endblock sdk.EndBlock
 
 	if app.endBlocker != nil {
-		eb, err := app.endBlocker(app.finalizeBlockState.Context())
+		// [AGORIC] Propagate the event history.
+		eventManagerWithHistory := sdk.NewEventManagerWithHistory(app.finalizeBlockState.eventHistory)
+		ctxWithHistory := app.finalizeBlockState.Context().WithEventManager(eventManagerWithHistory)
+
+		eb, err := app.endBlocker(ctxWithHistory)
 		if err != nil {
 			return endblock, err
 		}
