@@ -846,6 +846,9 @@ func (app *BaseApp) internalFinalizeBlock(ctx context.Context, req *abci.Request
 	events = append(events, endBlock.Events...)
 	cp := app.GetConsensusParams(app.finalizeBlockState.Context())
 
+	// [AGORIC] Clear the event history after each block.
+	app.finalizeBlockState.eventHistory = sdk.Events{}
+
 	return &abci.ResponseFinalizeBlock{
 		Events:                events,
 		TxResults:             txResults,
@@ -919,7 +922,7 @@ func (app *BaseApp) checkHalt(height int64, time time.Time) error {
 	}
 	// [AGORIC] Make a best-effort attempt to kill our process.
 	p, err := os.FindProcess(os.Getpid())
-	if err != nil {
+	if err == nil {
 		// attempt cascading signals in case SIGINT fails (os dependent)
 		_ = p.Signal(syscall.SIGINT)
 		_ = p.Signal(syscall.SIGTERM)
