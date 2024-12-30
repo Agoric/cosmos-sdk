@@ -12,9 +12,6 @@ jobs:
   golangci:
     name: golangci-lint
     runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        mode: [no-failure, no-deprecations]
     steps:
       - uses: actions/checkout@v3
       - uses: actions/setup-go@v4
@@ -50,3 +47,4 @@ jobs:
         env:
           GIT_DIFF: ${{ env.GIT_DIFF }}
           LINT_DIFF: 1
+        
