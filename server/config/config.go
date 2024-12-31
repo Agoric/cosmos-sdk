@@ -105,7 +105,7 @@ type BaseConfig struct {
 	// Valid settings are "committing" (default) or "local".
 	// The committing client allows greater query parallelism,
 	// but the local client is more defensive.
-	ABCIClientType string `mapstructure:"abci-client-type"`
+	ABCIClientType string `mapstructure:"abci-client-type"` // [AGORIC]
 }
 
 // APIConfig defines the API listener configuration.
@@ -245,6 +245,7 @@ func DefaultConfig() *Config {
 			IAVLCacheSize:       781250,
 			IAVLDisableFastNode: false,
 			AppDBBackend:        "",
+			ABCIClientType:      DefaultABCIClientType, // [AGORIC]
 		},
 		Telemetry: telemetry.Config{
 			Enabled:      false,
