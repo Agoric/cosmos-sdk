@@ -40,7 +40,7 @@ type VestingTestSuite struct {
 	accountKeeper authkeeper.AccountKeeper
 	bankKeeper    *vestingtestutil.MockBankKeeper
 	msgServer     vestingtypes.MsgServer
-	stakingKeeper vestingtestutil.MockStakingKeeper
+	stakingKeeper *vestingtestutil.MockStakingKeeper
 }
 
 func (s *VestingTestSuite) SetupTest() {
@@ -67,7 +67,7 @@ func (s *VestingTestSuite) SetupTest() {
 
 	vestingtypes.RegisterInterfaces(encCfg.InterfaceRegistry)
 	authtypes.RegisterInterfaces(encCfg.InterfaceRegistry)
-	s.msgServer = vesting.NewMsgServerImpl(s.accountKeeper, s.bankKeeper, &s.stakingKeeper)
+	s.msgServer = vesting.NewMsgServerImpl(s.accountKeeper, s.bankKeeper, s.stakingKeeper)
 }
 
 func (s *VestingTestSuite) TestCreateVestingAccount() {

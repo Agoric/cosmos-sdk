@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/cometbft/cometbft/abci/server"
+	cmtabcitypes "github.com/cometbft/cometbft/abci/types"
 	cmtcmd "github.com/cometbft/cometbft/cmd/cometbft/commands"
 	cmtcfg "github.com/cometbft/cometbft/config"
 	cmtjson "github.com/cometbft/cometbft/libs/json"
@@ -375,6 +376,11 @@ func startCmtNode(
 	}
 
 	cmtApp := NewCometABCIWrapper(app)
+	// TODO fix ABCI client type
+	//abciClient, err := proxy.NewLocalClientCreator(cmtApp).NewABCIClient()
+	//if err != nil {
+	//	return nil, cleanupFn, err
+	//}
 	tmNode, err = node.NewNodeWithContext(
 		ctx,
 		cfg,
@@ -948,6 +954,22 @@ func testnetify(ctx *Context, testnetAppCreator types.AppCreator, db dbm.DB, tra
 	}
 
 	return testnetApp, err
+}
+
+type abciClientCreator func(cmtabcitypes.Application) proxy.ClientCreator
+
+// getABCIClientCreator dispatches the client type to the right cometBFT constructor.
+// [AGORIC] Allows us to disable committingClient.
+func getABCIClientCreator(abciClientType string) (abciClientCreator, error) {
+	switch abciClientType {
+	// case serverconfig.AbciClientTypeCommitting:
+	// 	return proxy.NewCommittingClientCreator, nil
+	case serverconfig.AbciClientTypeLocal:
+		return func(app cmtabcitypes.Application) proxy.ClientCreator {
+			return proxy.NewLocalClientCreator(app)
+		}, nil
+	}
+	return nil, fmt.Errorf(`unknown ABCI client type "%s"`, abciClientType)
 }
 
 // addStartNodeFlags should be added to any CLI commands that start the network.
