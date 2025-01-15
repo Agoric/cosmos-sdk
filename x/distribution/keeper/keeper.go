@@ -22,6 +22,8 @@ type Keeper struct {
 	bankKeeper    types.BankKeeper
 	stakingKeeper types.StakingKeeper
 
+	hooks []types.DistributionHooks
+
 	feeCollectorName string // name of the FeeCollector ModuleAccount
 }
 
@@ -48,6 +50,7 @@ func NewKeeper(
 		authKeeper:       ak,
 		bankKeeper:       bk,
 		stakingKeeper:    sk,
+		hooks:            []types.DistributionHooks{},
 		feeCollectorName: feeCollectorName,
 	}
 }
@@ -55,6 +58,14 @@ func NewKeeper(
 // Logger returns a module-specific logger.
 func (k Keeper) Logger(ctx sdk.Context) log.Logger {
 	return ctx.Logger().With("module", "x/"+types.ModuleName)
+}
+
+// AddHooks adds a hooks object to be called upon certain events.
+func (k *Keeper) AddHooks(h types.DistributionHooks) *Keeper {
+	if h != nil {
+		k.hooks = append(k.hooks, h)
+	}
+	return k
 }
 
 // SetWithdrawAddr sets a new address that will receive the rewards upon withdrawal
@@ -129,6 +140,9 @@ func (k Keeper) WithdrawValidatorCommission(ctx sdk.Context, valAddr sdk.ValAddr
 		withdrawAddr := k.GetDelegatorWithdrawAddr(ctx, accAddr)
 		err := k.bankKeeper.SendCoinsFromModuleToAccount(ctx, types.ModuleName, withdrawAddr, commission)
 		if err != nil {
+			for _, h := range k.hooks {
+				h.AfterDelegationReward(ctx, accAddr, withdrawAddr, commission)
+			}
 			return nil, err
 		}
 	}

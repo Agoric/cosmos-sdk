@@ -10,7 +10,8 @@ BINDIR ?= $(GOPATH)/bin
 BUILDDIR ?= $(CURDIR)/build
 SIMAPP = ./simapp
 MOCKS_DIR = $(CURDIR)/tests/mocks
-HTTPS_GIT := https://github.com/cosmos/cosmos-sdk.git
+PR_TARGET_REPO = https://github.com/agoric-labs/cosmos-sdk.git
+PR_TARGET_BRANCH = Agoric
 DOCKER := $(shell which docker)
 DOCKER_BUF := $(DOCKER) run --rm -v $(CURDIR):/workspace --workdir /workspace bufbuild/buf:1.0.0-rc8
 PROJECT_NAME = $(shell git remote get-url origin | xargs basename -s .git)
@@ -317,7 +318,7 @@ test-cover:
 
 test-rosetta:
 	docker build -t rosetta-ci:latest -f contrib/rosetta/rosetta-ci/Dockerfile .
-	docker-compose -f contrib/rosetta/docker-compose.yaml up --abort-on-container-exit --exit-code-from test_rosetta --build
+	docker compose -f contrib/rosetta/docker-compose.yaml up --abort-on-container-exit --exit-code-from test_rosetta --build
 .PHONY: test-rosetta
 
 benchmark:
@@ -415,9 +416,9 @@ proto-lint:
 	@$(DOCKER_BUF) lint --error-format=json
 
 proto-check-breaking:
-	@$(DOCKER_BUF) breaking --against $(HTTPS_GIT)#branch=main
+	@$(DOCKER_BUF) breaking --against $(PR_TARGET_REPO)#branch=$(PR_TARGET_BRANCH)
 
-TM_URL              = https://raw.githubusercontent.com/cometbft/cometbft/v0.34.28/proto/tendermint
+TM_URL              = https://raw.githubusercontent.com/agoric-labs/cometbft/v0.34.30-alpha.agoric.1/proto/tendermint
 
 TM_CRYPTO_TYPES     = proto/tendermint/crypto
 TM_ABCI_TYPES       = proto/tendermint/abci
@@ -466,10 +467,10 @@ localnet-build-dlv:
 localnet-build-nodes:
 	$(DOCKER) run --rm -v $(CURDIR)/.testnets:/data cosmossdk/simd \
 			  testnet init-files --v 4 -o /data --starting-ip-address 192.168.10.2 --keyring-backend=test
-	docker-compose up -d
+	docker compose up -d
 
 localnet-stop:
-	docker-compose down
+	docker compose down
 
 # localnet-start will run a 4-node testnet locally. The nodes are
 # based off the docker images in: ./contrib/images/simd-env

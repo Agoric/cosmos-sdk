@@ -2,7 +2,13 @@ package baseapp
 
 import (
 	"encoding/json"
+	"fmt"
+	"os"
+	"os/signal"
+	"strings"
+	"syscall"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 	abci "github.com/tendermint/tendermint/abci/types"
@@ -167,6 +173,26 @@ func TestBaseAppCreateQueryContext(t *testing.T) {
 	}
 }
 
+func TestBaseAppCreateQueryContextRejectsFutureHeights(t *testing.T) {
+	t.Parallel()
+
+	logger := defaultLogger()
+	db := dbm.NewMemDB()
+	name := t.Name()
+	app := NewBaseApp(name, logger, db, nil)
+
+	proves := []bool{
+		false, true,
+	}
+	for _, prove := range proves {
+		t.Run(fmt.Sprintf("prove=%t", prove), func(t *testing.T) {
+			sctx, err := app.createQueryContext(30, true)
+			require.Error(t, err)
+			require.Equal(t, sctx, sdk.Context{})
+		})
+	}
+}
+
 type paramStore struct {
 	db *dbm.MemDB
 }
@@ -201,5 +227,73 @@ func (ps *paramStore) Get(_ sdk.Context, key []byte, ptr interface{}) {
 
 	if err := json.Unmarshal(bz, ptr); err != nil {
 		panic(err)
+	}
+}
+
+func TestABCI_HaltChain(t *testing.T) {
+	logger := defaultLogger()
+	db := dbm.NewMemDB()
+	name := t.Name()
+
+	testCases := []struct {
+		name        string
+		haltHeight  uint64
+		haltTime    uint64
+		blockHeight int64
+		blockTime   int64
+		expHalt     bool
+	}{
+		{"default", 0, 0, 10, 0, false},
+		{"halt-height-edge", 10, 0, 10, 0, false},
+		{"halt-height", 10, 0, 11, 0, true},
+		{"halt-time-edge", 0, 10, 1, 10, false},
+		{"halt-time", 0, 10, 1, 11, true},
+	}
+
+	sigs := make(chan os.Signal, 5)
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			if tc.expHalt {
+				signal.Notify(sigs, syscall.SIGINT, syscall.SIGTERM)
+			}
+
+			defer func() {
+				rec := recover()
+				signal.Stop(sigs)
+				var err error
+				if rec != nil {
+					err = rec.(error)
+				}
+				if !tc.expHalt {
+					require.NoError(t, err)
+				} else {
+					// ensure that we received the correct signals
+					require.Equal(t, syscall.SIGINT, <-sigs)
+					require.Equal(t, syscall.SIGTERM, <-sigs)
+					require.Equal(t, len(sigs), 0)
+
+					// Check our error message.
+					require.Error(t, err)
+					require.True(t, strings.HasPrefix(err.Error(), "halt application"))
+				}
+			}()
+
+			app := NewBaseApp(
+				name, logger, db, nil,
+				SetHaltHeight(tc.haltHeight),
+				SetHaltTime(tc.haltTime),
+			)
+
+			app.InitChain(abci.RequestInitChain{
+				InitialHeight: tc.blockHeight,
+			})
+
+			app.BeginBlock(abci.RequestBeginBlock{
+				Header: tmproto.Header{
+					Height: tc.blockHeight,
+					Time:   time.Unix(tc.blockTime, 0),
+				},
+			})
+		})
 	}
 }
