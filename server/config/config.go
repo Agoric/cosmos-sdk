@@ -13,6 +13,12 @@ import (
 	sdkerrors "github.com/cosmos/cosmos-sdk/types/errors"
 )
 
+// [AGORIC] Valid values for FlagAbciClientType
+const (
+	AbciClientTypeCommitting = "committing"
+	AbciClientTypeLocal      = "local"
+)
+
 const (
 	defaultMinGasPrices = ""
 
@@ -29,6 +35,9 @@ const (
 	// DefaultGRPCMaxSendMsgSize defines the default gRPC max message size in
 	// bytes the server can send.
 	DefaultGRPCMaxSendMsgSize = math.MaxInt32
+
+	// DefaultABCIClientType defines the default ABCI client type to use with cometbft.
+	DefaultABCIClientType = AbciClientTypeCommitting // [AGORIC]
 )
 
 // BaseConfig defines the server's basic configuration
@@ -91,6 +100,12 @@ type BaseConfig struct {
 	// AppDBBackend defines the type of Database to use for the application and snapshots databases.
 	// An empty string indicates that the CometBFT config's DBBackend value should be used.
 	AppDBBackend string `mapstructure:"app-db-backend"`
+
+	// ABCIClientType selects the type of ABCI client.
+	// Valid settings are "committing" (default) or "local".
+	// The committing client allows greater query parallelism,
+	// but the local client is more defensive.
+	ABCIClientType string `mapstructure:"abci-client-type"` // [AGORIC]
 }
 
 // APIConfig defines the API listener configuration.
@@ -230,6 +245,7 @@ func DefaultConfig() *Config {
 			IAVLCacheSize:       781250,
 			IAVLDisableFastNode: false,
 			AppDBBackend:        "",
+			ABCIClientType:      DefaultABCIClientType, // [AGORIC]
 		},
 		Telemetry: telemetry.Config{
 			Enabled:      false,

@@ -28,7 +28,8 @@ linters:
     - ineffassign
     - misspell
     - nakedret
-    - nolintlint
+    # [AGORIC] Caused false-positives
+    # - nolintlint
     - staticcheck
     - revive
     - stylecheck

@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/cometbft/cometbft/abci/server"
+	cmtabcitypes "github.com/cometbft/cometbft/abci/types"
 	cmtcmd "github.com/cometbft/cometbft/cmd/cometbft/commands"
 	cmtcfg "github.com/cometbft/cometbft/config"
 	cmtjson "github.com/cometbft/cometbft/libs/json"
@@ -75,6 +76,7 @@ const (
 	FlagIAVLCacheSize       = "iavl-cache-size"
 	FlagDisableIAVLFastNode = "iavl-disable-fastnode"
 	FlagShutdownGrace       = "shutdown-grace"
+	FlagAbciClientType      = "abci-client-type" // [AGORIC]
 
 	// state sync-related flags
 	FlagStateSyncSnapshotInterval   = "state-sync.snapshot-interval"
@@ -375,6 +377,11 @@ func startCmtNode(
 	}
 
 	cmtApp := NewCometABCIWrapper(app)
+	// TODO fix ABCI client type
+	//abciClient, err := proxy.NewLocalClientCreator(cmtApp).NewABCIClient()
+	//if err != nil {
+	//	return nil, cleanupFn, err
+	//}
 	tmNode, err = node.NewNodeWithContext(
 		ctx,
 		cfg,
@@ -961,6 +968,22 @@ func testnetify(ctx *Context, testnetAppCreator types.AppCreator, db dbm.DB, tra
 	return testnetApp, err
 }
 
+type abciClientCreator func(cmtabcitypes.Application) proxy.ClientCreator
+
+// getABCIClientCreator dispatches the client type to the right cometBFT constructor.
+// [AGORIC] Allows us to disable committingClient.
+func getABCIClientCreator(abciClientType string) (abciClientCreator, error) {
+	switch abciClientType {
+	// case serverconfig.AbciClientTypeCommitting:
+	// 	return proxy.NewCommittingClientCreator, nil
+	case serverconfig.AbciClientTypeLocal:
+		return func(app cmtabcitypes.Application) proxy.ClientCreator {
+			return proxy.NewLocalClientCreator(app)
+		}, nil
+	}
+	return nil, fmt.Errorf(`unknown ABCI client type "%s"`, abciClientType)
+}
+
 // addStartNodeFlags should be added to any CLI commands that start the network.
 func addStartNodeFlags(cmd *cobra.Command, opts StartCmdOptions) {
 	cmd.Flags().Bool(flagWithComet, true, "Run abci app embedded in-process with CometBFT")
@@ -995,6 +1018,7 @@ func addStartNodeFlags(cmd *cobra.Command, opts StartCmdOptions) {
 	cmd.Flags().Uint64(FlagStateSyncSnapshotInterval, 0, "State sync snapshot interval")
 	cmd.Flags().Uint32(FlagStateSyncSnapshotKeepRecent, 2, "State sync snapshot to keep")
 	cmd.Flags().Bool(FlagDisableIAVLFastNode, false, "Disable fast node for IAVL tree")
+	cmd.Flags().String(FlagAbciClientType, serverconfig.DefaultABCIClientType, fmt.Sprintf(`Type of ABCI client ("%s" or "%s")`, serverconfig.AbciClientTypeCommitting, serverconfig.AbciClientTypeLocal)) // [AGORIC]
 	cmd.Flags().Int(FlagMempoolMaxTxs, mempool.DefaultMaxTx, "Sets MaxTx value for the app-side mempool")
 	cmd.Flags().Duration(FlagShutdownGrace, 0*time.Second, "On Shutdown, duration to wait for resource clean up")
 

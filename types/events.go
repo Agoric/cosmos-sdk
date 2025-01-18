@@ -22,6 +22,8 @@ type EventManagerI interface {
 	EmitTypedEvents(tevs ...proto.Message) error
 	EmitEvent(event Event)
 	EmitEvents(events Events)
+	// ABCIEventsHistory [Agoric] history holds the events from all transactions delivered in a block
+	ABCIEventsHistory() []abci.Event
 }
 
 // ----------------------------------------------------------------------------
@@ -33,11 +35,22 @@ var _ EventManagerI = (*EventManager)(nil)
 // EventManager implements a simple wrapper around a slice of Event objects that
 // can be emitted from.
 type EventManager struct {
-	events Events
+	events  Events
+	history Events
+}
+
+// NewEventManagerWithHistory returns a new event manager with empty events,
+// but seeded with the provided history of earlier events in the block.
+// [AGORIC] This should be used to create the EventManager for use in EndBlockers.
+func NewEventManagerWithHistory(history Events) *EventManager {
+	return &EventManager{
+		events:  EmptyEvents(),
+		history: history,
+	}
 }
 
 func NewEventManager() *EventManager {
-	return &EventManager{EmptyEvents()}
+	return &EventManager{EmptyEvents(), EmptyEvents()}
 }
 
 func (em *EventManager) Events() Events { return em.events }
@@ -57,6 +70,11 @@ func (em *EventManager) EmitEvents(events Events) {
 // ABCIEvents returns all stored Event objects as abci.Event objects.
 func (em EventManager) ABCIEvents() []abci.Event {
 	return em.events.ToABCIEvents()
+}
+
+// ABCIEventsHistory [AGORIC] returns the historical slice of emitted events as a slice of abci.Event objects.
+func (em EventManager) ABCIEventsHistory() []abci.Event {
+	return em.history.ToABCIEvents()
 }
 
 // EmitTypedEvent takes typed event and emits converting it into Event
